@@ -1,5 +1,7 @@
 # llm-test
 
+[中文文档](README-cn.md)
+
 Model verification toolkit for detecting API proxy downgrades.
 
 When you pay for Claude Opus through a third-party API proxy, how do you know you're actually getting Opus — and not a cheaper model like Sonnet, Haiku, or even a quantized open-source substitute? **llm-test** answers this question by running a battery of 10 independent probes against your API endpoint and producing a confidence score.
@@ -100,6 +102,20 @@ llm-test run --output terminal --output json
 
 # Re-display a saved report
 llm-test report results/latest.json
+
+# --- Baseline caching (save API costs) ---
+
+# Collect baseline responses once and cache to disk
+llm-test baseline
+
+# Run tests using cached baseline (no official API calls for baseline)
+llm-test run --baseline-cache cache/baseline.json
+
+# Include latency data in cache (not recommended — timing data is ephemeral)
+llm-test baseline --include-latency
+
+# Custom cache output path
+llm-test baseline --output path/to/cache.json
 ```
 
 ## The 10 probes
@@ -190,6 +206,7 @@ src/llm_test/
   cli.py          Click CLI entry point
   config.py       YAML + Pydantic config loading
   client.py       Unified API client (anthropic SDK + httpx)
+  cache.py        Baseline response caching (data model + I/O)
   runner.py       Async probe orchestrator with progress display
   scoring.py      Weighted confidence aggregation + verdict
   report.py       Rich terminal tables + JSON output
@@ -210,6 +227,7 @@ config/
   default.yaml            Probe weights, parameters, output settings
   endpoints.yaml.example  Endpoint config template
 
+cache/                    Baseline response cache (git-ignored)
 results/                  Runtime output (git-ignored)
 ```
 
@@ -221,14 +239,41 @@ This toolkit is self-contained but draws on ideas from these projects:
 - **[LLMTest_NeedleInAHaystack](https://github.com/gkamradt/LLMTest_NeedleInAHaystack)** -- The original needle-in-a-haystack test by Gregory Kamradt. Our `needle` probe implements a similar methodology.
 - **[lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness)** -- Academic benchmark framework with hundreds of datasets. Can complement llm-test for deep capability profiling.
 
+## Baseline caching
+
+By default, every `llm-test run` calls the official Anthropic API for baseline comparisons in 4 probes (baseline, latency, style, knowledge). Since the content-based comparisons are stable for the same model at temperature 0, you can collect baseline responses once and reuse them across runs.
+
+```bash
+# Step 1: Collect baseline (one-time, or refresh when the model changes)
+llm-test baseline
+
+# Step 2: Use the cache in subsequent runs
+llm-test run --baseline-cache cache/baseline.json
+```
+
+**How it works:**
+
+- `llm-test baseline` runs all baseline-using probes against the official API and saves every response to `cache/baseline.json` (configurable via `--output`).
+- `llm-test run --baseline-cache` loads the cache and serves responses from it instead of calling the API. Probes receive a `CachedEndpointClient` that implements the same interface as `EndpointClient` — no probe code changes are needed.
+- The **latency probe is excluded by default** because its timing data (tokens/sec, latency) depends on real-time server load and would be misleading if cached. When excluded, the latency probe falls back to absolute throughput heuristics. Use `--include-latency` to override.
+- The cache includes a `config_hash` of the baseline endpoint configuration. If you change the baseline model or URL, a warning is printed and you should re-run `llm-test baseline`.
+- Cache keys are SHA-256 hashes of `(messages, system, max_tokens, temperature)`. If a probe's prompts are updated, the cache automatically misses and that probe degrades gracefully (score=0.5, confidence=0.1).
+
+**When to refresh the cache:**
+
+- After a new Claude model version is deployed
+- After changing the baseline model in `config/endpoints.yaml`
+- After modifying probe prompts or parameters in `config/default.yaml`
+
 ## Cost considerations
 
 A full test run makes many API calls to both the baseline and each target. Approximate per-target costs at default settings:
 
 - **Quick mode** (`--quick`): ~15 API calls, minimal cost
 - **Full run**: ~80-100 API calls, including some with long contexts (needle probe). Budget roughly $1-3 per target depending on context lengths.
+- **With baseline cache** (`--baseline-cache`): Eliminates all baseline API calls (~15-20 per target), cutting cost roughly in half.
 
-To reduce cost, disable expensive probes (`needle`, `baseline`) in `config/default.yaml` or use `--probe` to run only specific probes.
+To reduce cost further, disable expensive probes (`needle`, `baseline`) in `config/default.yaml` or use `--probe` to run only specific probes.
 
 ## License
 

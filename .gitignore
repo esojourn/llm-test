@@ -1,4 +1,5 @@
 results/
+cache/
 config/endpoints.yaml
 __pycache__/
 *.egg-info/

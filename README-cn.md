@@ -1,5 +1,7 @@
 # llm-test
 
+[English](README.md)
+
 API 代理模型降级检测工具。
 
 当你通过第三方 API 代理付费使用 Claude Opus 时，你怎么确认实际拿到的真的是 Opus，而不是更便宜的 Sonnet、Haiku，甚至是量化过的开源替代品？**llm-test** 通过对你的 API 端点运行 10 个独立探测，生成一个置信度评分来回答这个问题。
@@ -100,6 +102,20 @@ llm-test run --output terminal --output json
 
 # 重新展示已保存的报告
 llm-test report results/latest.json
+
+# --- 基线缓存（节省 API 成本） ---
+
+# 一次性收集基线响应并缓存到磁盘
+llm-test baseline
+
+# 使用缓存运行测试（不再调用官方 API 获取基线）
+llm-test run --baseline-cache cache/baseline.json
+
+# 将延迟数据也纳入缓存（不推荐——时延数据依赖实时网络状况）
+llm-test baseline --include-latency
+
+# 自定义缓存输出路径
+llm-test baseline --output path/to/cache.json
 ```
 
 ## 10 个探测维度
@@ -190,6 +206,7 @@ src/llm_test/
   cli.py          Click CLI 入口
   config.py       YAML + Pydantic 配置加载
   client.py       统一 API 客户端（anthropic SDK + httpx）
+  cache.py        基线响应缓存（数据模型 + I/O）
   runner.py       异步探测编排器（含进度条）
   scoring.py      加权置信度聚合 + 判定
   report.py       Rich 终端表格 + JSON 输出
@@ -210,6 +227,7 @@ config/
   default.yaml            探测权重、参数、输出设置
   endpoints.yaml.example  端点配置模板
 
+cache/                    基线响应缓存（已 git-ignore）
 results/                  运行时输出（已 git-ignore）
 ```
 
@@ -221,12 +239,39 @@ results/                  运行时输出（已 git-ignore）
 - **[LLMTest_NeedleInAHaystack](https://github.com/gkamradt/LLMTest_NeedleInAHaystack)** -- Gregory Kamradt 的大海捞针原始测试。我们的 `needle` 探测实现了类似的方法论。
 - **[lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness)** -- 包含数百个数据集的学术基准评测框架。可与 llm-test 互补进行深度能力分析。
 
+## 基线缓存
+
+默认情况下，每次 `llm-test run` 都会调用 Anthropic 官方 API 进行基线对比，涉及 4 个探测（baseline、latency、style、knowledge）。由于在相同模型 + temperature 0 下，基于内容的对比结果是相对稳定的，你可以一次性收集基线响应并在后续运行中重复使用。
+
+```bash
+# 第 1 步：收集基线（一次性，或在模型更新时刷新）
+llm-test baseline
+
+# 第 2 步：后续运行使用缓存
+llm-test run --baseline-cache cache/baseline.json
+```
+
+**工作原理：**
+
+- `llm-test baseline` 对官方 API 运行所有需要基线的探测，并将每个响应保存到 `cache/baseline.json`（可通过 `--output` 自定义路径）。
+- `llm-test run --baseline-cache` 加载缓存并从中返回响应，而不调用 API。探测接收到的 `CachedEndpointClient` 实现了与 `EndpointClient` 相同的接口——探测代码无需任何修改。
+- **延迟探测默认排除在缓存之外**，因为其时延数据（tokens/秒、延迟）依赖实时服务器负载，缓存后会产生误导。排除时，延迟探测会自动回退到绝对吞吐量启发式模式。使用 `--include-latency` 可覆盖此行为。
+- 缓存包含基线端点配置的 `config_hash`。如果你更改了基线模型或 URL，会打印警告，此时应重新运行 `llm-test baseline`。
+- 缓存键是 `(messages, system, max_tokens, temperature)` 的 SHA-256 哈希。如果探测的提示词被更新，缓存会自动未命中，对应探测优雅降级（score=0.5, confidence=0.1）。
+
+**何时需要刷新缓存：**
+
+- Claude 部署了新的模型版本后
+- 修改了 `config/endpoints.yaml` 中的基线模型后
+- 修改了 `config/default.yaml` 中的探测提示词或参数后
+
 ## 成本说明
 
 完整测试运行会向基线和每个目标发起大量 API 调用。默认设置下每个目标的大致成本：
 
 - **快速模式**（`--quick`）：约 15 次 API 调用，成本极低
 - **完整运行**：约 80-100 次 API 调用，包括一些长上下文调用（needle 探测）。每个目标大约预算 $1-3，取决于上下文长度配置。
+- **使用基线缓存**（`--baseline-cache`）：消除所有基线 API 调用（每个目标约 15-20 次），成本大约减半。
 
 要降低成本，可在 `config/default.yaml` 中禁用高成本探测（`needle`、`baseline`），或使用 `--probe` 仅运行特定探测。
 

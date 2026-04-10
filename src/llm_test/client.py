@@ -11,6 +11,8 @@ import httpx
 
 from .config import EndpointConfig
 
+# Avoid circular import — cache types are imported lazily where needed.
+
 
 @dataclass
 class APIResponse:
@@ -195,3 +197,61 @@ class EndpointClient:
             ttfb_ms=latency_ms,
             tokens_per_sec=tokens_per_sec,
         )
+
+
+class CachedEndpointClient:
+    """Drop-in replacement for EndpointClient that serves from a baseline cache."""
+
+    def __init__(self, cache: Any, name: str = "baseline (cached)"):
+        # cache is a BaselineCacheFile instance (imported lazily to avoid circular import)
+        self.name = name
+        self._cache = cache
+
+    async def send_message(
+        self,
+        messages: list[dict[str, str]],
+        system: str | None = None,
+        max_tokens: int = 1024,
+        temperature: float = 0.0,
+    ) -> APIResponse:
+        from .cache import CacheMissError, compute_prompt_hash, dict_to_apiresponse
+
+        key = compute_prompt_hash(messages, system, max_tokens, temperature)
+        entry = self._cache.entries.get(key)
+        if entry is None:
+            raise CacheMissError(
+                f"No cached response for prompt hash {key[:16]}... "
+                f"Re-run 'llm-test baseline' to refresh the cache."
+            )
+        return dict_to_apiresponse(entry.response)
+
+
+class RecordingEndpointClient:
+    """Wraps EndpointClient, forwards calls, and records responses for caching."""
+
+    def __init__(self, inner: EndpointClient):
+        self.inner = inner
+        self.name = inner.name
+        self.config = inner.config
+        self.recorded: dict[str, Any] = {}  # prompt_hash -> CacheEntry
+
+    async def send_message(
+        self,
+        messages: list[dict[str, str]],
+        system: str | None = None,
+        max_tokens: int = 1024,
+        temperature: float = 0.0,
+    ) -> APIResponse:
+        from .cache import CacheEntry, apiresponse_to_dict, compute_prompt_hash
+
+        response = await self.inner.send_message(messages, system, max_tokens, temperature)
+        key = compute_prompt_hash(messages, system, max_tokens, temperature)
+        self.recorded[key] = CacheEntry(
+            prompt_hash=key,
+            messages=messages,
+            system=system,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            response=apiresponse_to_dict(response),
+        )
+        return response
