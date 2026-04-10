@@ -9,6 +9,7 @@ from typing import Any
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
+from .cache import CacheMissError
 from .client import CachedEndpointClient, EndpointClient, RecordingEndpointClient
 from .config import AppConfig, ProbeConfig
 from .probes import BaseProbe, ProbeResult, get_all_probes, get_probe
@@ -78,7 +79,8 @@ async def run_probes(
 
             results: list[ProbeResult] = []
             for probe_name, probe in probes.items():
-                progress.update(task, description=f"[{target_config.name}] Running {probe_name}...")
+                cache_tag = " (cached baseline)" if cache and probe_name not in (cache.excluded_probes if cache else []) else ""
+                progress.update(task, description=f"[{target_config.name}] Running {probe_name}{cache_tag}...")
                 probe_cfg = config.probes.get(probe_name, ProbeConfig())
                 extra = probe_cfg.model_dump(exclude={"enabled", "weight"})
 
@@ -89,6 +91,14 @@ async def run_probes(
                         probe_baseline = None
                     result = await probe.run(target, probe_baseline, extra)
                     results.append(result)
+                except CacheMissError as e:
+                    console.print(f"[yellow]  Warning: {probe_name}: cache miss — {e}[/yellow]")
+                    results.append(ProbeResult(
+                        probe_name=probe_name,
+                        score=0.5,
+                        confidence=0.1,
+                        details={"error": f"Cache miss: {e}"},
+                    ))
                 except Exception as e:
                     results.append(ProbeResult(
                         probe_name=probe_name,
