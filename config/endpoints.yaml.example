@@ -1,0 +1,18 @@
+baseline:
+  provider: anthropic
+  api_key_env: ANTHROPIC_API_KEY
+  base_url: https://api.anthropic.com
+  model: claude-opus-4-6
+
+targets:
+  - name: "proxy-vendor-a"
+    provider: anthropic_compatible
+    api_key_env: PROXY_A_API_KEY
+    base_url: https://proxy-a.example.com
+    model: claude-opus-4-6
+
+  - name: "proxy-vendor-b"
+    provider: openai_compatible
+    api_key_env: PROXY_B_API_KEY
+    base_url: https://proxy-b.example.com/v1
+    model: claude-opus-4-6

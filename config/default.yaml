@@ -1,0 +1,46 @@
+probes:
+  metadata:
+    enabled: true
+    weight: 1.0
+  latency:
+    enabled: true
+    weight: 3.0
+    num_samples: 10
+    prompt_lengths: [100, 1000, 5000]
+  reasoning:
+    enabled: true
+    weight: 5.0
+    num_tasks: 5
+  needle:
+    enabled: true
+    weight: 4.0
+    context_lengths: [10000, 50000, 100000]
+    depths: [0.1, 0.25, 0.5, 0.75, 0.9]
+  identity:
+    enabled: true
+    weight: 2.0
+    num_prompts: 8
+  sysprompt:
+    enabled: false
+    weight: 2.0
+  knowledge:
+    enabled: true
+    weight: 3.0
+  style:
+    enabled: true
+    weight: 3.0
+    num_samples: 5
+  logprobs:
+    enabled: false
+    weight: 2.0
+  baseline:
+    enabled: true
+    weight: 4.0
+    num_comparisons: 5
+
+scoring:
+  confidence_threshold: 0.75
+
+output:
+  format: [terminal, json]
+  results_dir: results/

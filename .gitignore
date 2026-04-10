@@ -1,0 +1,6 @@
+results/
+config/endpoints.yaml
+__pycache__/
+*.egg-info/
+.venv/
+dist/

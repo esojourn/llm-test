@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=70.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "llm-test"
+version = "0.1.0"
+description = "Model verification toolkit - detect API proxy downgrades"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.42",
+    "httpx>=0.27",
+    "click>=8.1",
+    "rich>=13.0",
+    "pyyaml>=6.0",
+    "numpy>=1.26",
+    "pydantic>=2.5",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+llm-test = "llm_test.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
