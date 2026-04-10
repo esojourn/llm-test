@@ -128,22 +128,44 @@ def baseline(
 def report(report_path: str) -> None:
     """Re-display a previously saved JSON report."""
     import json
-    from .scoring import Verdict
+    from .probes import ProbeResult
+    from .scoring import RunResult, Verdict
 
     console = Console()
     with open(report_path) as f:
         data = json.load(f)
 
-    verdicts: dict[str, Verdict] = {}
+    results: dict[str, RunResult] = {}
+    detailed = data.get("detailed_results", {})
+
     for name, v in data.get("targets", {}).items():
-        verdicts[name] = Verdict(
+        verdict = Verdict(
             overall_score=v["overall_score"],
             classification=v["classification"],
             probe_scores=v["probe_scores"],
             explanation=v["explanation"],
         )
 
-    print_report(verdicts, console)
+        # Reconstruct probe_results and endpoint_info from v2 detailed data
+        probe_results: list[ProbeResult] = []
+        endpoint_info: dict[str, str] = {}
+        if name in detailed:
+            endpoint_info = detailed[name].get("endpoint", {})
+            for p in detailed[name].get("probes", []):
+                probe_results.append(ProbeResult(
+                    probe_name=p["probe_name"],
+                    score=p["score"],
+                    confidence=p["confidence"],
+                    details=p.get("details", {}),
+                ))
+
+        results[name] = RunResult(
+            endpoint_info=endpoint_info,
+            verdict=verdict,
+            probe_results=probe_results,
+        )
+
+    print_report(results, console)
 
 
 if __name__ == "__main__":

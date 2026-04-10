@@ -13,7 +13,7 @@ from .cache import CacheMissError
 from .client import CachedEndpointClient, EndpointClient, RecordingEndpointClient
 from .config import AppConfig, ProbeConfig
 from .probes import BaseProbe, ProbeResult, get_all_probes, get_probe
-from .scoring import Verdict, compute_verdict
+from .scoring import RunResult, Verdict, compute_verdict
 
 
 async def run_probes(
@@ -22,8 +22,8 @@ async def run_probes(
     target_names: list[str] | None = None,
     quick: bool = False,
     baseline_cache_path: str | None = None,
-) -> dict[str, Verdict]:
-    """Run probes against all configured targets. Returns {target_name: Verdict}."""
+) -> dict[str, RunResult]:
+    """Run probes against all configured targets. Returns {target_name: RunResult}."""
     console = Console()
     cache = None
 
@@ -67,7 +67,7 @@ async def run_probes(
         for name in probes
     }
 
-    verdicts: dict[str, Verdict] = {}
+    verdicts: dict[str, RunResult] = {}
 
     with Progress(
         SpinnerColumn(),
@@ -110,7 +110,16 @@ async def run_probes(
                 progress.advance(task)
 
             verdict = compute_verdict(results, weights)
-            verdicts[target_config.name] = verdict
+            verdicts[target_config.name] = RunResult(
+                endpoint_info={
+                    "name": target_config.name,
+                    "provider": target_config.provider,
+                    "base_url": target_config.base_url,
+                    "model": target_config.model,
+                },
+                verdict=verdict,
+                probe_results=list(results),
+            )
 
     return verdicts
 

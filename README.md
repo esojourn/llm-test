@@ -152,6 +152,75 @@ Each probe produces a score from 0.0 (definitely not Opus) to 1.0 (consistent wi
 |---|---|---|
 | **metadata** | 1.0 | Checks the `model` field in the API response and inspects HTTP headers for proxy fingerprints. Trivially spoofable, but a mismatch is a strong negative signal. |
 
+## Report output
+
+When you add `--output json`, llm-test writes a timestamped report to `results/` (plus a `latest.json` symlink). The report uses a **v2 format** with two sections:
+
+**`targets`** — backwards-compatible summary (same as before):
+
+```json
+{
+  "version": 2,
+  "timestamp": "20260410_153000",
+  "targets": {
+    "my-proxy": {
+      "overall_score": 0.82,
+      "classification": "LIKELY_OPUS",
+      "probe_scores": {"metadata": 1.0, "latency": 0.7, "reasoning": 0.85},
+      "explanation": "Most probes are consistent with Opus, minor anomalies detected."
+    }
+  }
+}
+```
+
+**`detailed_results`** — full diagnostic data for every target, probe, and API call:
+
+```json
+{
+  "detailed_results": {
+    "my-proxy": {
+      "endpoint": {
+        "name": "my-proxy",
+        "provider": "anthropic_compatible",
+        "base_url": "https://my-proxy.example.com",
+        "model": "claude-opus-4-6"
+      },
+      "probes": [
+        {
+          "probe_name": "reasoning",
+          "score": 0.85,
+          "confidence": 0.9,
+          "details": {"tasks_passed": 4, "tasks_total": 5, "failed": ["edge_case_3"]},
+          "api_calls": [
+            {
+              "model_reported": "claude-opus-4-6-20260301",
+              "content": "The answer is 42 because...",
+              "input_tokens": 385,
+              "output_tokens": 120,
+              "stop_reason": "end_turn",
+              "latency_ms": 4521.3,
+              "ttfb_ms": 1230.5,
+              "tokens_per_sec": 26.5
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
+```
+
+What's captured in `detailed_results`:
+
+| Data | Location |
+|---|---|
+| Provider type, base URL, model | `endpoint` |
+| Per-probe score + confidence | `probes[].score`, `probes[].confidence` |
+| Probe-specific diagnostics (votes, similarity scores, latency stats, etc.) | `probes[].details` |
+| Every API call: model output, token counts, latency, TTFB, throughput | `probes[].api_calls[]` |
+
+The terminal report also shows provider info and a confidence column alongside scores. The `llm-test report` command can display both old (v1) and new (v2) format files.
+
 ## Scoring formula
 
 ```
@@ -208,8 +277,8 @@ src/llm_test/
   client.py       Unified API client (anthropic SDK + httpx)
   cache.py        Baseline response caching (data model + I/O)
   runner.py       Async probe orchestrator with progress display
-  scoring.py      Weighted confidence aggregation + verdict
-  report.py       Rich terminal tables + JSON output
+  scoring.py      Weighted confidence aggregation, Verdict + RunResult
+  report.py       Rich terminal tables + JSON output (v2 with full details)
   probes/
     __init__.py   BaseProbe, ProbeResult, @register_probe, registry
     metadata.py   Response metadata check

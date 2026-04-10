@@ -152,6 +152,75 @@ llm-test baseline --output path/to/cache.json
 |---|---|---|
 | **metadata** | 1.0 | 检查 API 响应中的 `model` 字段，并检查 HTTP 头部中的代理指纹。很容易伪造，但不匹配是一个强烈的负面信号。 |
 
+## 报告输出
+
+使用 `--output json` 时，llm-test 会在 `results/` 目录下写入一个带时间戳的报告文件（同时更新 `latest.json`）。报告采用 **v2 格式**，包含两个部分：
+
+**`targets`** — 向后兼容的摘要（与旧格式相同）：
+
+```json
+{
+  "version": 2,
+  "timestamp": "20260410_153000",
+  "targets": {
+    "my-proxy": {
+      "overall_score": 0.82,
+      "classification": "LIKELY_OPUS",
+      "probe_scores": {"metadata": 1.0, "latency": 0.7, "reasoning": 0.85},
+      "explanation": "Most probes are consistent with Opus, minor anomalies detected."
+    }
+  }
+}
+```
+
+**`detailed_results`** — 每个目标、每个探测、每次 API 调用的完整诊断数据：
+
+```json
+{
+  "detailed_results": {
+    "my-proxy": {
+      "endpoint": {
+        "name": "my-proxy",
+        "provider": "anthropic_compatible",
+        "base_url": "https://my-proxy.example.com",
+        "model": "claude-opus-4-6"
+      },
+      "probes": [
+        {
+          "probe_name": "reasoning",
+          "score": 0.85,
+          "confidence": 0.9,
+          "details": {"tasks_passed": 4, "tasks_total": 5, "failed": ["edge_case_3"]},
+          "api_calls": [
+            {
+              "model_reported": "claude-opus-4-6-20260301",
+              "content": "答案是 42，因为...",
+              "input_tokens": 385,
+              "output_tokens": 120,
+              "stop_reason": "end_turn",
+              "latency_ms": 4521.3,
+              "ttfb_ms": 1230.5,
+              "tokens_per_sec": 26.5
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
+```
+
+`detailed_results` 中记录的数据：
+
+| 数据 | 位置 |
+|---|---|
+| Provider 类型、URL、模型名 | `endpoint` |
+| 每个探测的分数 + 置信度 | `probes[].score`、`probes[].confidence` |
+| 探测专属诊断数据（投票结果、相似度分数、延迟统计等） | `probes[].details` |
+| 每次 API 调用：模型输出、token 数、延迟、TTFB、吞吐量 | `probes[].api_calls[]` |
+
+终端报告同样增强了：显示 provider 信息，评分表格新增置信度列。`llm-test report` 命令同时兼容旧版（v1）和新版（v2）格式的报告文件。
+
 ## 评分公式
 
 ```
@@ -208,8 +277,8 @@ src/llm_test/
   client.py       统一 API 客户端（anthropic SDK + httpx）
   cache.py        基线响应缓存（数据模型 + I/O）
   runner.py       异步探测编排器（含进度条）
-  scoring.py      加权置信度聚合 + 判定
-  report.py       Rich 终端表格 + JSON 输出
+  scoring.py      加权置信度聚合、Verdict + RunResult
+  report.py       Rich 终端表格 + JSON 输出（v2 含完整详情）
   probes/
     __init__.py   BaseProbe、ProbeResult、@register_probe、注册表
     metadata.py   响应元数据检查

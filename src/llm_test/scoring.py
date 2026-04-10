@@ -15,6 +15,14 @@ class Verdict:
     explanation: str
 
 
+@dataclass
+class RunResult:
+    """Full result for one target — verdict plus all probe data and endpoint info."""
+    endpoint_info: dict[str, str]
+    verdict: Verdict
+    probe_results: list[ProbeResult]
+
+
 def compute_verdict(
     results: list[ProbeResult],
     weights: dict[str, float],
