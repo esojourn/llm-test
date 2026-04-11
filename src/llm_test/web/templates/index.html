@@ -1,0 +1,330 @@
+{% extends "base.html" %}
+{% block title %}首页{% endblock %}
+
+{% block content %}
+<div x-data="testApp()">
+
+  <!-- Hero + Test Form -->
+  <section class="max-w-4xl mx-auto px-6 pt-20 pb-16 text-center">
+    <h1 class="text-4xl sm:text-5xl font-bold text-white leading-tight">
+      你的 Claude Opus，<span class="gradient-text">是真的吗？</span>
+    </h1>
+    <p class="mt-4 text-lg text-gray-400 max-w-2xl mx-auto">
+      10 项独立探测，加权置信度评分，验证你的 API 中转站是否偷偷降级了模型。
+    </p>
+
+    <!-- Test Input Card -->
+    <div class="mt-10 max-w-lg mx-auto bg-bg-card rounded-xl border border-border p-6 card-glow fade-in"
+         x-show="state === 'idle'" x-transition>
+      <div class="space-y-4 text-left">
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">API Base URL</label>
+          <input type="url" x-model="form.base_url"
+                 placeholder="https://your-proxy.example.com"
+                 class="w-full bg-bg border border-border rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:border-accent focus:outline-none transition">
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">API Key</label>
+          <input type="password" x-model="form.api_key"
+                 placeholder="sk-..."
+                 class="w-full bg-bg border border-border rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:border-accent focus:outline-none transition">
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">协议类型</label>
+          <select x-model="form.provider"
+                  class="w-full bg-bg border border-border rounded-lg px-4 py-2.5 text-white focus:border-accent focus:outline-none transition">
+            <option value="anthropic_compatible">Anthropic 兼容</option>
+            <option value="openai_compatible">OpenAI 兼容</option>
+          </select>
+        </div>
+        <button @click="startTest()"
+                :disabled="!form.base_url || !form.api_key"
+                class="w-full bg-accent hover:bg-accent-light disabled:opacity-40 disabled:cursor-not-allowed text-white font-medium py-3 rounded-lg transition mt-2">
+          开始验证
+        </button>
+      </div>
+      <p class="text-xs text-gray-600 mt-4">
+        你的 API Key 仅用于本次测试，不会被存储。测试约需 2-5 分钟。
+      </p>
+    </div>
+
+    <!-- Progress Panel -->
+    <div class="mt-10 max-w-lg mx-auto bg-bg-card rounded-xl border border-border p-6 card-glow"
+         x-show="state === 'testing'" x-transition>
+      <div class="text-left">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-white font-medium">测试进行中...</h3>
+          <span class="text-sm text-gray-400" x-text="doneCount + '/' + totalCount"></span>
+        </div>
+        <!-- Overall progress bar -->
+        <div class="w-full h-1.5 bg-bg rounded-full mb-6">
+          <div class="h-full bg-accent rounded-full score-bar" :style="'width:' + (totalCount ? (doneCount/totalCount*100) : 0) + '%'"></div>
+        </div>
+        <!-- Probe list -->
+        <div class="space-y-3">
+          <template x-for="p in probes" :key="p.name">
+            <div class="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
+              <div class="flex items-center gap-3">
+                <div class="w-5 h-5 flex items-center justify-center">
+                  <template x-if="p.status === 'pending'">
+                    <div class="w-2 h-2 rounded-full bg-gray-600"></div>
+                  </template>
+                  <template x-if="p.status === 'running'">
+                    <svg class="animate-spin w-4 h-4 text-accent" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                  </template>
+                  <template x-if="p.status === 'done'">
+                    <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"
+                         :class="p.score >= 0.7 ? 'text-score-green' : p.score >= 0.5 ? 'text-score-yellow' : 'text-score-red'">
+                      <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                    </svg>
+                  </template>
+                </div>
+                <span class="text-sm" :class="p.status === 'running' ? 'text-white' : 'text-gray-400'" x-text="p.label"></span>
+              </div>
+              <div x-show="p.status === 'done'" class="text-sm font-mono"
+                   :class="p.score >= 0.7 ? 'text-score-green' : p.score >= 0.5 ? 'text-score-yellow' : 'text-score-red'"
+                   x-text="p.score?.toFixed(2)">
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- Error -->
+    <div class="mt-10 max-w-lg mx-auto bg-red-900/20 border border-red-800/50 rounded-xl p-6"
+         x-show="state === 'error'" x-transition>
+      <p class="text-red-400" x-text="errorMsg"></p>
+      <button @click="reset()" class="mt-4 text-sm text-gray-400 hover:text-white transition">重新测试</button>
+    </div>
+  </section>
+
+  <!-- Why this tool -->
+  <section class="max-w-6xl mx-auto px-6 py-16" x-show="state === 'idle'">
+    <h2 class="text-2xl font-bold text-white text-center mb-10">API 中转站降级是真实存在的问题</h2>
+    <div class="grid sm:grid-cols-3 gap-6">
+      <div class="bg-bg-card rounded-xl border border-border p-6 card-glow">
+        <div class="text-2xl mb-3">&#x1F504;</div>
+        <h3 class="text-white font-medium mb-2">模型偷换</h3>
+        <p class="text-sm text-gray-400">你付了 Opus 的价格，拿到的可能是 Sonnet 甚至 Haiku 的回答。中转站可以在服务端替换模型，而你的 API 调用完全感知不到。</p>
+      </div>
+      <div class="bg-bg-card rounded-xl border border-border p-6 card-glow">
+        <div class="text-2xl mb-3">&#x1F3AD;</div>
+        <h3 class="text-white font-medium mb-2">Metadata 可以伪造</h3>
+        <p class="text-sm text-gray-400">响应头里的 model 字段可以被代理服务器重写。仅凭 API 返回的模型名称无法判断真伪。</p>
+      </div>
+      <div class="bg-bg-card rounded-xl border border-border p-6 card-glow">
+        <div class="text-2xl mb-3">&#x1F4C9;</div>
+        <h3 class="text-white font-medium mb-2">性能差异是真实的</h3>
+        <p class="text-sm text-gray-400">Opus 在复杂推理、长上下文理解上明显优于小模型。如果你在做高质量的开发工作，模型降级会直接影响你的产出。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Probes Overview -->
+  <section class="max-w-6xl mx-auto px-6 py-16" x-show="state === 'idle'">
+    <h2 class="text-2xl font-bold text-white text-center mb-3">10 项独立探测，多维度交叉验证</h2>
+    <p class="text-center text-gray-400 mb-10">每项探测独立评分，加权聚合得出最终结论</p>
+    <div class="grid sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div class="bg-bg-card rounded-lg border border-border p-4 card-glow">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-sm font-medium text-white">复杂推理</span>
+          <span class="text-xs bg-accent/20 text-accent px-2 py-0.5 rounded">5.0</span>
+        </div>
+        <p class="text-xs text-gray-500">多步骤数学和逻辑题，小模型无法通过</p>
+      </div>
+      <div class="bg-bg-card rounded-lg border border-border p-4 card-glow">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-sm font-medium text-white">大海捞针</span>
+          <span class="text-xs bg-accent/20 text-accent px-2 py-0.5 rounded">4.0</span>
+        </div>
+        <p class="text-xs text-gray-500">在超长上下文中检索隐藏信息</p>
+      </div>
+      <div class="bg-bg-card rounded-lg border border-border p-4 card-glow">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-sm font-medium text-white">基线对比</span>
+          <span class="text-xs bg-accent/20 text-accent px-2 py-0.5 rounded">4.0</span>
+        </div>
+        <p class="text-xs text-gray-500">与已知 Opus 回答做 A/B 对比</p>
+      </div>
+      <div class="bg-bg-card rounded-lg border border-border p-4 card-glow">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-sm font-medium text-white">延迟分析</span>
+          <span class="text-xs bg-accent/20 text-accent px-2 py-0.5 rounded">3.0</span>
+        </div>
+        <p class="text-xs text-gray-500">比基线快 = 可疑（小模型更快）</p>
+      </div>
+      <div class="bg-bg-card rounded-lg border border-border p-4 card-glow">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-sm font-medium text-white">知识边界</span>
+          <span class="text-xs bg-accent/20 text-accent px-2 py-0.5 rounded">3.0</span>
+        </div>
+        <p class="text-xs text-gray-500">测试训练数据截止日期一致性</p>
+      </div>
+      <div class="bg-bg-card rounded-lg border border-border p-4 card-glow">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-sm font-medium text-white">风格指纹</span>
+          <span class="text-xs bg-accent/20 text-accent px-2 py-0.5 rounded">3.0</span>
+        </div>
+        <p class="text-xs text-gray-500">词汇丰富度、句子结构、格式化模式</p>
+      </div>
+      <div class="bg-bg-card rounded-lg border border-border p-4 card-glow">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-sm font-medium text-white">身份验证</span>
+          <span class="text-xs bg-accent/20 text-accent px-2 py-0.5 rounded">2.0</span>
+        </div>
+        <p class="text-xs text-gray-500">多种方式探测模型自报身份</p>
+      </div>
+      <div class="bg-bg-card rounded-lg border border-border p-4 card-glow">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-sm font-medium text-white">系统提示</span>
+          <span class="text-xs bg-accent/20 text-accent px-2 py-0.5 rounded">2.0</span>
+        </div>
+        <p class="text-xs text-gray-500">检测代理是否注入了伪装指令</p>
+      </div>
+      <div class="bg-bg-card rounded-lg border border-border p-4 card-glow">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-sm font-medium text-white">响应元数据</span>
+          <span class="text-xs bg-accent/20 text-accent px-2 py-0.5 rounded">1.0</span>
+        </div>
+        <p class="text-xs text-gray-500">检查模型字段、响应结构、HTTP 头</p>
+      </div>
+      <div class="bg-bg-card rounded-lg border border-border p-4 card-glow">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-sm font-medium text-white">概率分布</span>
+          <span class="text-xs bg-accent/20 text-accent px-2 py-0.5 rounded">2.0</span>
+        </div>
+        <p class="text-xs text-gray-500">分析 token 概率分布指纹</p>
+      </div>
+    </div>
+    <div class="text-center mt-8">
+      <a href="/methodology" class="text-accent hover:text-accent-light transition text-sm">了解完整方法论 &rarr;</a>
+    </div>
+  </section>
+
+  <!-- Scoring Tiers -->
+  <section class="max-w-4xl mx-auto px-6 py-16" x-show="state === 'idle'">
+    <h2 class="text-2xl font-bold text-white text-center mb-10">五级评定，一目了然</h2>
+    <div class="space-y-3">
+      <div class="flex items-center gap-4">
+        <div class="w-40 text-right text-sm font-mono text-score-green font-medium">GENUINE_OPUS</div>
+        <div class="flex-1 h-8 rounded bg-bg-card border border-border overflow-hidden"><div class="h-full bg-score-green/20 rounded" style="width:100%"></div></div>
+        <div class="w-16 text-xs text-gray-500">&ge; 0.85</div>
+      </div>
+      <div class="flex items-center gap-4">
+        <div class="w-40 text-right text-sm font-mono text-green-400 font-medium">LIKELY_OPUS</div>
+        <div class="flex-1 h-8 rounded bg-bg-card border border-border overflow-hidden"><div class="h-full bg-green-400/20 rounded" style="width:82%"></div></div>
+        <div class="w-16 text-xs text-gray-500">&ge; 0.70</div>
+      </div>
+      <div class="flex items-center gap-4">
+        <div class="w-40 text-right text-sm font-mono text-score-yellow font-medium">SUSPICIOUS</div>
+        <div class="flex-1 h-8 rounded bg-bg-card border border-border overflow-hidden"><div class="h-full bg-score-yellow/20 rounded" style="width:58%"></div></div>
+        <div class="w-16 text-xs text-gray-500">&ge; 0.50</div>
+      </div>
+      <div class="flex items-center gap-4">
+        <div class="w-40 text-right text-sm font-mono text-orange-400 font-medium">LIKELY_DOWNGRADE</div>
+        <div class="flex-1 h-8 rounded bg-bg-card border border-border overflow-hidden"><div class="h-full bg-orange-400/20 rounded" style="width:35%"></div></div>
+        <div class="w-16 text-xs text-gray-500">&ge; 0.30</div>
+      </div>
+      <div class="flex items-center gap-4">
+        <div class="w-40 text-right text-sm font-mono text-score-red font-medium">DEFINITE_DOWNGRADE</div>
+        <div class="flex-1 h-8 rounded bg-bg-card border border-border overflow-hidden"><div class="h-full bg-score-red/20 rounded" style="width:15%"></div></div>
+        <div class="w-16 text-xs text-gray-500">&lt; 0.30</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Open Source Trust -->
+  <section class="max-w-4xl mx-auto px-6 py-16 text-center" x-show="state === 'idle'">
+    <p class="text-gray-500 text-sm">完全开源，代码可审计。评分公式完全透明：</p>
+    <p class="font-mono text-gray-300 mt-2 text-sm">score = &sum;(score<sub>i</sub> &times; weight<sub>i</sub> &times; confidence<sub>i</sub>) / &sum;(weight<sub>i</sub> &times; confidence<sub>i</sub>)</p>
+  </section>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PROBE_LABELS = {
+  metadata: '响应元数据', latency: '延迟分析', reasoning: '复杂推理',
+  needle: '大海捞针', identity: '身份验证', knowledge: '知识边界',
+  style: '风格指纹', baseline: '基线对比', sysprompt: '系统提示提取',
+  logprobs: '概率分布',
+};
+
+function testApp() {
+  return {
+    state: 'idle', // idle | testing | error
+    form: { base_url: '', api_key: '', provider: 'anthropic_compatible' },
+    probes: [],
+    totalCount: 0,
+    doneCount: 0,
+    errorMsg: '',
+
+    async startTest() {
+      this.state = 'testing';
+      this.probes = [];
+      this.doneCount = 0;
+      this.errorMsg = '';
+
+      try {
+        const resp = await fetch('/api/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.form),
+          credentials: 'include',
+        });
+        if (!resp.ok) {
+          const err = await resp.json();
+          throw new Error(err.detail || '请求失败');
+        }
+        const { test_id } = await resp.json();
+        this.listenSSE(test_id);
+      } catch(e) {
+        this.errorMsg = e.message;
+        this.state = 'error';
+      }
+    },
+
+    listenSSE(testId) {
+      const es = new EventSource(`/api/test/${testId}/stream`);
+      es.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'start') {
+          this.totalCount = msg.total;
+          this.probes = msg.probes.map(name => ({
+            name, label: PROBE_LABELS[name] || name, status: 'pending', score: null
+          }));
+        } else if (msg.type === 'probe_start') {
+          const p = this.probes.find(x => x.name === msg.probe);
+          if (p) p.status = 'running';
+        } else if (msg.type === 'probe_done') {
+          const p = this.probes.find(x => x.name === msg.probe);
+          if (p) { p.status = 'done'; p.score = msg.result.score; }
+          this.doneCount++;
+        } else if (msg.type === 'complete') {
+          es.close();
+          window.location.href = `/report/${msg.report_id}`;
+        } else if (msg.type === 'error') {
+          es.close();
+          this.errorMsg = msg.message;
+          this.state = 'error';
+        }
+      };
+      es.onerror = () => {
+        es.close();
+        if (this.state === 'testing') {
+          this.errorMsg = '连接中断，请重试';
+          this.state = 'error';
+        }
+      };
+    },
+
+    reset() {
+      this.state = 'idle';
+      this.errorMsg = '';
+    },
+  }
+}
+</script>
+{% endblock %}

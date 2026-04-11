@@ -14,10 +14,22 @@ dependencies = [
     "rich>=13.0",
     "pyyaml>=6.0",
     "pydantic>=2.5",
+    # Web
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.9",
+    # Database
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.30",
+    "alembic>=1.14",
+    # Auth
+    "bcrypt>=4.2",
+    "python-jose[cryptography]>=3.3",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "aiosqlite>=0.20"]
 
 [project.scripts]
 llm-test = "llm_test.cli:main"

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}llm-test{% endblock %} — 模型质量验证</title>
+  <meta name="description" content="{% block description %}验证你的 API 中转站是否真正提供 Claude Opus，10 项独立探测，加权置信度评分。{% endblock %}">
+  <!-- Tailwind CSS CDN (play mode for dev, replace with built CSS in prod) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            bg: { DEFAULT: '#0A0A0F', card: '#14141F', hover: '#1A1A2A' },
+            border: { DEFAULT: '#1E1E2E', light: '#2A2A3A' },
+            accent: { DEFAULT: '#7C5CFC', light: '#9B7FFF', dark: '#5B3FDB' },
+            score: { green: '#00C853', yellow: '#FFD600', red: '#FF1744' },
+          },
+          fontFamily: {
+            sans: ['Inter', 'Noto Sans SC', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
+          },
+        },
+      },
+    }
+  </script>
+  <!-- Alpine.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <style>
+    body { background: #0A0A0F; }
+    /* Glassmorphism nav */
+    .nav-glass { background: rgba(10,10,15,0.8); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+    /* Subtle glow on cards */
+    .card-glow { box-shadow: 0 0 0 1px rgba(124,92,252,0.1); }
+    .card-glow:hover { box-shadow: 0 0 0 1px rgba(124,92,252,0.3), 0 0 20px rgba(124,92,252,0.05); }
+    /* Score bar animation */
+    .score-bar { transition: width 0.8s ease-out; }
+    /* Fade in */
+    .fade-in { animation: fadeIn 0.5s ease-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+    /* Gradient text */
+    .gradient-text { background: linear-gradient(135deg, #7C5CFC, #00C853); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body class="text-gray-200 min-h-screen flex flex-col" x-data="appState()">
+
+  <!-- Navigation -->
+  <nav class="nav-glass fixed top-0 w-full z-50 border-b border-border">
+    <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+      <div class="flex items-center gap-8">
+        <a href="/" class="font-mono font-bold text-white text-lg">llm-test</a>
+        <div class="hidden sm:flex items-center gap-6 text-sm text-gray-400">
+          <a href="/" class="hover:text-white transition">首页</a>
+          <a href="/methodology" class="hover:text-white transition">方法论</a>
+        </div>
+      </div>
+      <div class="flex items-center gap-4 text-sm">
+        <a href="https://github.com" target="_blank" class="text-gray-400 hover:text-white transition">GitHub</a>
+        <template x-if="!user">
+          <div class="flex items-center gap-3">
+            <a href="/login" class="text-gray-400 hover:text-white transition">登录</a>
+            <a href="/register" class="bg-accent hover:bg-accent-light text-white px-3 py-1.5 rounded-md text-sm transition">注册</a>
+          </div>
+        </template>
+        <template x-if="user">
+          <div class="flex items-center gap-3">
+            <span class="text-gray-400" x-text="user.username"></span>
+            <button @click="logout()" class="text-gray-500 hover:text-white transition">退出</button>
+          </div>
+        </template>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main content -->
+  <main class="flex-1 pt-14">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-border py-8 mt-20">
+    <div class="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between text-sm text-gray-500 gap-4">
+      <div class="flex items-center gap-6">
+        <span class="font-mono">llm-test</span>
+        <a href="/methodology" class="hover:text-gray-300 transition">方法论</a>
+        <a href="https://github.com" target="_blank" class="hover:text-gray-300 transition">GitHub</a>
+      </div>
+      <div>本工具不隶属于 Anthropic</div>
+    </div>
+  </footer>
+
+  <script>
+    function appState() {
+      return {
+        user: null,
+        init() {
+          const token = this.getCookie('token');
+          if (token) {
+            try {
+              const payload = JSON.parse(atob(token.split('.')[1]));
+              this.user = { username: payload.username };
+            } catch(e) { /* invalid token */ }
+          }
+        },
+        getCookie(name) {
+          const v = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+          return v ? v.pop() : '';
+        },
+        logout() {
+          document.cookie = 'token=; path=/; max-age=0';
+          this.user = null;
+          window.location.href = '/';
+        }
+      }
+    }
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

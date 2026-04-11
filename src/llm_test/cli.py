@@ -168,5 +168,20 @@ def report(report_path: str) -> None:
     print_report(results, console)
 
 
+@main.command()
+@click.option("--host", default="127.0.0.1", help="Bind host")
+@click.option("--port", default=8000, help="Bind port")
+@click.option("--reload", "do_reload", is_flag=True, help="Auto-reload on code changes")
+def serve(host: str, port: int, do_reload: bool) -> None:
+    """Start the web server."""
+    import uvicorn
+    uvicorn.run(
+        "llm_test.web.app:app",
+        host=host,
+        port=port,
+        reload=do_reload,
+    )
+
+
 if __name__ == "__main__":
     main()

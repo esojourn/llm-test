@@ -22,6 +22,22 @@ The core insight: **no single probe is decisive, but faking all 10 simultaneousl
 
 ## Quick start
 
+### Web UI (recommended for most users)
+
+```bash
+# 1. Install
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e .
+
+# 2. Start the web server
+llm-test serve
+
+# 3. Open http://127.0.0.1:8000 in your browser
+#    Enter your API proxy's base URL and key, click "开始验证"
+```
+
+### CLI
+
 ```bash
 # 1. Install
 python3 -m venv .venv && source .venv/bin/activate
@@ -398,12 +414,46 @@ class MyProbe(BaseProbe):
 
 Then add an import in `src/llm_test/probes/__init__.py` inside `_load_probes()` and optionally configure it in `config/default.yaml`.
 
+## Web application
+
+llm-test includes a built-in web interface for users who want to test their API proxy without touching the command line.
+
+```bash
+llm-test serve                    # Start on http://127.0.0.1:8000
+llm-test serve --port 3000        # Custom port
+llm-test serve --reload           # Dev mode with auto-reload
+```
+
+### Features
+
+- **Homepage** — Enter your proxy's base URL, API key, and protocol type, then click to start testing. Real-time progress shows each probe's result as it completes via Server-Sent Events.
+- **Report page** — Shareable report with verdict, probe score breakdown, and full diagnostic explanation. Each report gets a unique URL (`/report/{id}`).
+- **Methodology page** — Detailed explanation of all 10 probes, scoring formula, design principles, and known limitations.
+- **User accounts** — Optional registration with username/password. Logged-in users' reports are saved to their account.
+
+### Architecture
+
+The web app is a FastAPI application that directly imports and runs the existing probe code on the server. This protects probe prompts, scoring logic, and baseline data from being exposed to the client.
+
+- **Backend**: FastAPI + Jinja2 templates + SQLAlchemy async
+- **Frontend**: Tailwind CSS (dark theme) + Alpine.js for interactivity
+- **Database**: SQLite by default (`data/llm_test.db`), PostgreSQL for production (set `DATABASE_URL`)
+- **Auth**: bcrypt + JWT stored in cookies
+- **Real-time progress**: SSE (Server-Sent Events)
+
+### Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `DATABASE_URL` | `sqlite+aiosqlite:///data/llm_test.db` | Database connection string. Use `postgresql+asyncpg://...` for production. |
+| `SECRET_KEY` | `dev-secret-change-in-production` | JWT signing key. **Must be changed in production.** |
+
 ## Project structure
 
 ```
 src/llm_test/
   __init__.py
-  cli.py          Click CLI entry point
+  cli.py          Click CLI entry point (run, report, baseline, serve)
   config.py       YAML + Pydantic config loading
   client.py       Unified API client (anthropic SDK + httpx)
   cache.py        Baseline response caching (data model + I/O)
@@ -422,13 +472,28 @@ src/llm_test/
     baseline.py   A/B comparison against baseline
     sysprompt.py  System prompt extraction (optional)
     logprobs.py   Logprob analysis (optional)
+  web/
+    app.py            FastAPI application factory
+    database.py       SQLAlchemy async engine + session
+    models.py         User + TestReport database models
+    auth.py           bcrypt + JWT authentication
+    schemas.py        Request validation schemas
+    templates_conf.py Jinja2 templates setup
+    routes/
+      pages.py        HTML page routes (/, /methodology, /report, /login, /register)
+      auth.py         Register/login API
+      api.py          Test submission + SSE progress streaming
+    templates/        Jinja2 HTML templates (dark theme)
+    static/           CSS + JS assets
 
 config/
   default.yaml            Probe weights, parameters, output settings
   endpoints.yaml.example  Endpoint config template
 
+data/                     SQLite database (git-ignored)
 cache/                    Baseline response cache (git-ignored)
-results/                  Runtime output (git-ignored)
+results/                  CLI runtime output (git-ignored)
+alembic/                  Database migrations (for production PostgreSQL)
 ```
 
 ## Related tools

@@ -1,7 +1,10 @@
 results/
 cache/
+data/
 config/endpoints.yaml
 __pycache__/
 *.egg-info/
 .venv/
 dist/
+.env
+.claude/

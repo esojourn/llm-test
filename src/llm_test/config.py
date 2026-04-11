@@ -13,12 +13,15 @@ from pydantic import BaseModel, Field
 class EndpointConfig(BaseModel):
     name: str = "baseline"
     provider: str  # "anthropic" | "anthropic_compatible" | "openai_compatible"
-    api_key_env: str
-    base_url: str
-    model: str
+    api_key_env: str = ""
+    base_url: str = ""
+    model: str = ""
+    api_key_inline: str = ""  # Direct key (used by web API, bypasses env var)
 
     @property
     def api_key(self) -> str:
+        if self.api_key_inline:
+            return self.api_key_inline
         key = os.environ.get(self.api_key_env, "")
         if not key:
             raise ValueError(f"Environment variable {self.api_key_env} is not set")

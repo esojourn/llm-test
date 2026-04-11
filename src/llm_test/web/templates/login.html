@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}登录{% endblock %}
+
+{% block content %}
+<div class="max-w-sm mx-auto px-6 py-20" x-data="authForm()">
+  <h1 class="text-2xl font-bold text-white text-center mb-8">登录</h1>
+
+  <div class="bg-bg-card rounded-xl border border-border p-6 card-glow">
+    <div class="space-y-4">
+      <div>
+        <label class="block text-sm text-gray-400 mb-1">用户名</label>
+        <input type="text" x-model="username"
+               class="w-full bg-bg border border-border rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:border-accent focus:outline-none transition"
+               @keydown.enter="submit()">
+      </div>
+      <div>
+        <label class="block text-sm text-gray-400 mb-1">密码</label>
+        <input type="password" x-model="password"
+               class="w-full bg-bg border border-border rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:border-accent focus:outline-none transition"
+               @keydown.enter="submit()">
+      </div>
+      <div x-show="error" class="text-sm text-red-400" x-text="error"></div>
+      <button @click="submit()" :disabled="loading"
+              class="w-full bg-accent hover:bg-accent-light disabled:opacity-40 text-white font-medium py-3 rounded-lg transition">
+        <span x-show="!loading">登录</span>
+        <span x-show="loading">登录中...</span>
+      </button>
+    </div>
+    <p class="text-center text-sm text-gray-500 mt-4">
+      没有账号？<a href="/register" class="text-accent hover:text-accent-light transition">注册</a>
+    </p>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function authForm() {
+  return {
+    username: '', password: '', error: '', loading: false,
+    async submit() {
+      this.error = ''; this.loading = true;
+      try {
+        const resp = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: this.username, password: this.password }),
+        });
+        if (!resp.ok) { const e = await resp.json(); throw new Error(e.detail); }
+        const data = await resp.json();
+        document.cookie = `token=${data.token}; path=/; max-age=${72*3600}`;
+        window.location.href = '/';
+      } catch(e) { this.error = e.message; }
+      finally { this.loading = false; }
+    }
+  }
+}
+</script>
+{% endblock %}

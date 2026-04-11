@@ -1,0 +1,250 @@
+{% extends "base.html" %}
+{% block title %}方法论{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto px-6 py-20">
+
+  <!-- Hero -->
+  <div class="text-center mb-16 fade-in">
+    <h1 class="text-3xl sm:text-4xl font-bold text-white">测试方法论</h1>
+    <p class="mt-3 text-gray-400">10 项探测的技术细节和评分体系的数学原理</p>
+  </div>
+
+  <!-- Design Principles -->
+  <section class="mb-16 fade-in">
+    <h2 class="text-xl font-bold text-white mb-6">核心设计原则</h2>
+    <div class="grid sm:grid-cols-2 gap-4">
+      <div class="bg-bg-card rounded-xl border border-border p-5 card-glow">
+        <h3 class="text-white font-medium mb-2">基线相对比较</h3>
+        <p class="text-sm text-gray-400">不使用绝对阈值。每项探测将目标端点与已知的 Anthropic 官方 Opus 进行对比，消除了不同网络环境和 API 版本带来的误差。</p>
+      </div>
+      <div class="bg-bg-card rounded-xl border border-border p-5 card-glow">
+        <h3 class="text-white font-medium mb-2">非对称延迟评分</h3>
+        <p class="text-sm text-gray-400">比基线慢是正常的（代理转发开销）。比基线快才可疑——因为更小的模型推理速度更快。这种非对称设计避免了误判正常的代理延迟。</p>
+      </div>
+      <div class="bg-bg-card rounded-xl border border-border p-5 card-glow">
+        <h3 class="text-white font-medium mb-2">加权置信度聚合</h3>
+        <p class="text-sm text-gray-400">每项探测有两个维度：权重（该维度的重要性）和置信度（本次测量的可靠性）。二者共同作用于最终评分，低置信度的探测不会影响整体判断。</p>
+      </div>
+      <div class="bg-bg-card rounded-xl border border-border p-5 card-glow">
+        <h3 class="text-white font-medium mb-2">优雅降级</h3>
+        <p class="text-sm text-gray-400">如果某项探测出错（网络超时、API 异常等），返回中性分数 0.5 和极低置信度 0.1，等效于从计算中移除，不会污染最终结果。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Probe Details -->
+  <section class="mb-16 fade-in" x-data="{ open: null }">
+    <h2 class="text-xl font-bold text-white mb-6">10 项独立探测</h2>
+    <div class="space-y-3">
+
+      <!-- Reasoning -->
+      <div class="bg-bg-card rounded-xl border border-border overflow-hidden card-glow">
+        <button @click="open = open === 'reasoning' ? null : 'reasoning'" class="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-bg-hover transition">
+          <div class="flex items-center gap-3">
+            <span class="text-white font-medium">复杂推理</span>
+            <span class="text-xs bg-accent/20 text-accent px-2 py-0.5 rounded">权重 5.0</span>
+            <span class="text-xs text-red-400">最高信号</span>
+          </div>
+          <svg class="w-4 h-4 text-gray-500 transition-transform" :class="open === 'reasoning' && 'rotate-180'" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </button>
+        <div x-show="open === 'reasoning'" x-transition class="px-5 pb-5 text-sm text-gray-400 space-y-3 border-t border-border/50 pt-4">
+          <p><strong class="text-gray-300">为什么最重要：</strong>这是最难伪造的探测。Opus 在困难推理任务上的表现明显优于 Sonnet 和 Haiku，降级的模型无法通过这些测试。</p>
+          <p><strong class="text-gray-300">测试方法：</strong>5 道精心设计的推理题，涵盖多约束数学题、逻辑排列题、代码边缘情况、文字谜题、经典计数题。每道题有自动验证器。</p>
+          <p><strong class="text-gray-300">评分：</strong>得分 = 正确题数 / 总题数。置信度 = min(0.95, 0.6 + 题数 &times; 0.07)。</p>
+        </div>
+      </div>
+
+      <!-- Needle -->
+      <div class="bg-bg-card rounded-xl border border-border overflow-hidden card-glow">
+        <button @click="open = open === 'needle' ? null : 'needle'" class="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-bg-hover transition">
+          <div class="flex items-center gap-3">
+            <span class="text-white font-medium">大海捞针</span>
+            <span class="text-xs bg-accent/20 text-accent px-2 py-0.5 rounded">权重 4.0</span>
+          </div>
+          <svg class="w-4 h-4 text-gray-500 transition-transform" :class="open === 'needle' && 'rotate-180'" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </button>
+        <div x-show="open === 'needle'" x-transition class="px-5 pb-5 text-sm text-gray-400 space-y-3 border-t border-border/50 pt-4">
+          <p><strong class="text-gray-300">原理：</strong>在 10K、50K、100K 长度的文本中，在不同深度（10%、25%、50%、75%、90%）插入随机验证码，要求模型精确检索。</p>
+          <p><strong class="text-gray-300">评分：</strong>得分 = 成功检索次数 / 总测试次数。上下文窗口较小的模型会在长文本测试中失败。</p>
+        </div>
+      </div>
+
+      <!-- Baseline -->
+      <div class="bg-bg-card rounded-xl border border-border overflow-hidden card-glow">
+        <button @click="open = open === 'baseline' ? null : 'baseline'" class="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-bg-hover transition">
+          <div class="flex items-center gap-3">
+            <span class="text-white font-medium">基线对比</span>
+            <span class="text-xs bg-accent/20 text-accent px-2 py-0.5 rounded">权重 4.0</span>
+          </div>
+          <svg class="w-4 h-4 text-gray-500 transition-transform" :class="open === 'baseline' && 'rotate-180'" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </button>
+        <div x-show="open === 'baseline'" x-transition class="px-5 pb-5 text-sm text-gray-400 space-y-3 border-t border-border/50 pt-4">
+          <p><strong class="text-gray-300">原理：</strong>向目标和已知 Opus 发送完全相同的提示，比较回答的相似度。同一模型在相同提示下的输出会有高度一致的特征。</p>
+          <p><strong class="text-gray-300">方法：</strong>5 个标准化提示，使用 n-gram Jaccard 相似度比较。相似度 > 0.6 = 高度一致，< 0.25 = 明显不同。</p>
+        </div>
+      </div>
+
+      <!-- Latency -->
+      <div class="bg-bg-card rounded-xl border border-border overflow-hidden card-glow">
+        <button @click="open = open === 'latency' ? null : 'latency'" class="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-bg-hover transition">
+          <div class="flex items-center gap-3">
+            <span class="text-white font-medium">延迟分析</span>
+            <span class="text-xs bg-accent/20 text-accent px-2 py-0.5 rounded">权重 3.0</span>
+          </div>
+          <svg class="w-4 h-4 text-gray-500 transition-transform" :class="open === 'latency' && 'rotate-180'" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </button>
+        <div x-show="open === 'latency'" x-transition class="px-5 pb-5 text-sm text-gray-400 space-y-3 border-t border-border/50 pt-4">
+          <p><strong class="text-gray-300">核心洞察：</strong>非对称评分——比基线快才可疑。三种长度的提示（100、1000、5000 字符），每种 10 次采样。</p>
+          <p><strong class="text-gray-300">评分：</strong>ratio = target_tps / baseline_tps。ratio &le; 1.0 得分 1.0（正常），ratio &ge; 2.0 得分 0.1（几乎必然是小模型），中间线性插值。</p>
+        </div>
+      </div>
+
+      <!-- Knowledge -->
+      <div class="bg-bg-card rounded-xl border border-border overflow-hidden card-glow">
+        <button @click="open = open === 'knowledge' ? null : 'knowledge'" class="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-bg-hover transition">
+          <div class="flex items-center gap-3">
+            <span class="text-white font-medium">知识边界</span>
+            <span class="text-xs bg-accent/20 text-accent px-2 py-0.5 rounded">权重 3.0</span>
+          </div>
+          <svg class="w-4 h-4 text-gray-500 transition-transform" :class="open === 'knowledge' && 'rotate-180'" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </button>
+        <div x-show="open === 'knowledge'" x-transition class="px-5 pb-5 text-sm text-gray-400 space-y-3 border-t border-border/50 pt-4">
+          <p><strong class="text-gray-300">原理：</strong>不同模型版本有不同的训练数据截止日期。测试边界事件可以揭示实际运行的模型版本。</p>
+          <p><strong class="text-gray-300">测试内容：</strong>2024 美国大选结果、Claude 3.5 Sonnet 发布信息、2025 年初 AI 模型发布情况、训练数据截止日期自报等。</p>
+        </div>
+      </div>
+
+      <!-- Style -->
+      <div class="bg-bg-card rounded-xl border border-border overflow-hidden card-glow">
+        <button @click="open = open === 'style' ? null : 'style'" class="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-bg-hover transition">
+          <div class="flex items-center gap-3">
+            <span class="text-white font-medium">风格指纹</span>
+            <span class="text-xs bg-accent/20 text-accent px-2 py-0.5 rounded">权重 3.0</span>
+          </div>
+          <svg class="w-4 h-4 text-gray-500 transition-transform" :class="open === 'style' && 'rotate-180'" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </button>
+        <div x-show="open === 'style'" x-transition class="px-5 pb-5 text-sm text-gray-400 space-y-3 border-t border-border/50 pt-4">
+          <p><strong class="text-gray-300">原理：</strong>不同模型即使在 temperature=0 下也有微妙差异——词汇丰富度、句子长度、格式化偏好等。</p>
+          <p><strong class="text-gray-300">提取特征：</strong>词数、字符数、词汇丰富度（Type-Token Ratio）、平均句子长度、模糊语言频率、Markdown 格式化特征、代码块使用等。</p>
+        </div>
+      </div>
+
+      <!-- Identity -->
+      <div class="bg-bg-card rounded-xl border border-border overflow-hidden card-glow">
+        <button @click="open = open === 'identity' ? null : 'identity'" class="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-bg-hover transition">
+          <div class="flex items-center gap-3">
+            <span class="text-white font-medium">身份验证</span>
+            <span class="text-xs bg-accent/20 text-accent px-2 py-0.5 rounded">权重 2.0</span>
+          </div>
+          <svg class="w-4 h-4 text-gray-500 transition-transform" :class="open === 'identity' && 'rotate-180'" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </button>
+        <div x-show="open === 'identity'" x-transition class="px-5 pb-5 text-sm text-gray-400 space-y-3 border-t border-border/50 pt-4">
+          <p><strong class="text-gray-300">方法：</strong>通过 8 种不同策略让模型透露自己的身份：直接询问、补全测试、角色扮演、编码、对比、截止日期、覆写尝试、自评。</p>
+          <p><strong class="text-gray-300">注意：</strong>置信度固定为 0.5——因为代理可以通过系统提示伪造身份。这项探测是补充验证，不是决定性证据。</p>
+        </div>
+      </div>
+
+      <!-- Sysprompt -->
+      <div class="bg-bg-card rounded-xl border border-border overflow-hidden card-glow">
+        <button @click="open = open === 'sysprompt' ? null : 'sysprompt'" class="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-bg-hover transition">
+          <div class="flex items-center gap-3">
+            <span class="text-white font-medium">系统提示提取</span>
+            <span class="text-xs bg-accent/20 text-accent px-2 py-0.5 rounded">权重 2.0</span>
+            <span class="text-xs text-gray-600">默认禁用</span>
+          </div>
+          <svg class="w-4 h-4 text-gray-500 transition-transform" :class="open === 'sysprompt' && 'rotate-180'" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </button>
+        <div x-show="open === 'sysprompt'" x-transition class="px-5 pb-5 text-sm text-gray-400 space-y-3 border-t border-border/50 pt-4">
+          <p><strong class="text-gray-300">原理：</strong>许多代理通过注入系统提示来伪装模型身份。本探测尝试用 4 种策略提取这些注入的指令。</p>
+          <p><strong class="text-gray-300">评分：</strong>未泄露 = 1.0，泄露含伪装关键词 = 0.1，泄露但意图不明 = 0.5。</p>
+        </div>
+      </div>
+
+      <!-- Metadata -->
+      <div class="bg-bg-card rounded-xl border border-border overflow-hidden card-glow">
+        <button @click="open = open === 'metadata' ? null : 'metadata'" class="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-bg-hover transition">
+          <div class="flex items-center gap-3">
+            <span class="text-white font-medium">响应元数据</span>
+            <span class="text-xs bg-accent/20 text-accent px-2 py-0.5 rounded">权重 1.0</span>
+            <span class="text-xs text-gray-600">信号最弱</span>
+          </div>
+          <svg class="w-4 h-4 text-gray-500 transition-transform" :class="open === 'metadata' && 'rotate-180'" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </button>
+        <div x-show="open === 'metadata'" x-transition class="px-5 pb-5 text-sm text-gray-400 space-y-3 border-t border-border/50 pt-4">
+          <p><strong class="text-gray-300">检查内容：</strong>响应中的 model 字段是否匹配、可疑 HTTP 头（x-forwarded-for, via, x-proxy 等）、Anthropic 响应格式完整性。</p>
+          <p><strong class="text-gray-300">局限：</strong>信号最弱，因为代理可以轻易伪造这些字段。</p>
+        </div>
+      </div>
+
+      <!-- Logprobs -->
+      <div class="bg-bg-card rounded-xl border border-border overflow-hidden card-glow">
+        <button @click="open = open === 'logprobs' ? null : 'logprobs'" class="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-bg-hover transition">
+          <div class="flex items-center gap-3">
+            <span class="text-white font-medium">概率分布</span>
+            <span class="text-xs bg-accent/20 text-accent px-2 py-0.5 rounded">权重 2.0</span>
+            <span class="text-xs text-gray-600">默认禁用</span>
+          </div>
+          <svg class="w-4 h-4 text-gray-500 transition-transform" :class="open === 'logprobs' && 'rotate-180'" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </button>
+        <div x-show="open === 'logprobs'" x-transition class="px-5 pb-5 text-sm text-gray-400 space-y-3 border-t border-border/50 pt-4">
+          <p><strong class="text-gray-300">说明：</strong>大多数 API 不暴露 logprobs。当可用时，token 概率分布可以非常可靠地指纹模型。目前为占位实现。</p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Scoring Formula -->
+  <section class="mb-16 fade-in">
+    <h2 class="text-xl font-bold text-white mb-6">加权置信度聚合</h2>
+    <div class="bg-bg-card rounded-xl border border-border p-6 card-glow">
+      <div class="text-center mb-6">
+        <p class="font-mono text-lg text-white">score = &sum;(score<sub>i</sub> &times; weight<sub>i</sub> &times; confidence<sub>i</sub>) / &sum;(weight<sub>i</sub> &times; confidence<sub>i</sub>)</p>
+      </div>
+      <div class="space-y-2 text-sm text-gray-400">
+        <p><strong class="text-gray-300">score<sub>i</sub></strong> — 第 i 项探测的得分 (0-1)，0 表示确定不是 Opus，1 表示与 Opus 完全一致</p>
+        <p><strong class="text-gray-300">weight<sub>i</sub></strong> — 该探测的重要性权重（推理 5.0 最高，元数据 1.0 最低）</p>
+        <p><strong class="text-gray-300">confidence<sub>i</sub></strong> — 本次测量的可靠性（取决于样本量、是否有基线、探测类型的固有可靠性）</p>
+        <p>置信度低于阈值 (0.75) 的探测被排除在最终计算之外。</p>
+      </div>
+    </div>
+
+    <!-- Tiers table -->
+    <div class="mt-6 bg-bg-card rounded-xl border border-border overflow-hidden">
+      <table class="w-full text-sm">
+        <thead><tr class="border-b border-border text-gray-500"><th class="px-5 py-3 text-left">等级</th><th class="px-5 py-3 text-left">分数范围</th><th class="px-5 py-3 text-left">含义</th></tr></thead>
+        <tbody class="divide-y divide-border/50">
+          <tr><td class="px-5 py-3 font-mono text-score-green">GENUINE_OPUS</td><td class="px-5 py-3 text-gray-400">&ge; 0.85</td><td class="px-5 py-3 text-gray-400">所有探测一致认为是 Opus</td></tr>
+          <tr><td class="px-5 py-3 font-mono text-green-400">LIKELY_OPUS</td><td class="px-5 py-3 text-gray-400">&ge; 0.70</td><td class="px-5 py-3 text-gray-400">大部分一致，存在轻微异常</td></tr>
+          <tr><td class="px-5 py-3 font-mono text-score-yellow">SUSPICIOUS</td><td class="px-5 py-3 text-gray-400">&ge; 0.50</td><td class="px-5 py-3 text-gray-400">信号混杂，无法确定</td></tr>
+          <tr><td class="px-5 py-3 font-mono text-orange-400">LIKELY_DOWNGRADE</td><td class="px-5 py-3 text-gray-400">&ge; 0.30</td><td class="px-5 py-3 text-gray-400">多项探测指向降级</td></tr>
+          <tr><td class="px-5 py-3 font-mono text-score-red">DEFINITE_DOWNGRADE</td><td class="px-5 py-3 text-gray-400">&lt; 0.30</td><td class="px-5 py-3 text-gray-400">强证据不是 Opus</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Limitations -->
+  <section class="mb-16 fade-in">
+    <h2 class="text-xl font-bold text-white mb-6">已知局限性</h2>
+    <div class="bg-bg-card rounded-xl border border-border p-6 card-glow">
+      <ul class="space-y-3 text-sm text-gray-400">
+        <li class="flex gap-2"><span class="text-gray-600">&bull;</span>身份探测可被系统提示覆盖（置信度已调低至 0.5）</li>
+        <li class="flex gap-2"><span class="text-gray-600">&bull;</span>延迟受网络环境影响（已通过非对称评分缓解）</li>
+        <li class="flex gap-2"><span class="text-gray-600">&bull;</span>知识截止日期会随模型更新变化</li>
+        <li class="flex gap-2"><span class="text-gray-600">&bull;</span>单次测试结果受随机性影响，建议多次测试取平均</li>
+        <li class="flex gap-2"><span class="text-gray-600">&bull;</span>logprobs 分析依赖 API 支持，大多数场景不可用</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <div class="text-center fade-in">
+    <a href="/" class="inline-block bg-accent hover:bg-accent-light text-white font-medium px-6 py-3 rounded-lg transition">
+      返回首页，立即验证你的 API 端点 &rarr;
+    </a>
+  </div>
+
+</div>
+{% endblock %}

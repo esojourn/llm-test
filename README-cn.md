@@ -22,6 +22,22 @@ llm-test 将**目标**端点（你要验证的代理）与**基线**（Anthropic
 
 ## 快速开始
 
+### Web 界面（推荐大多数用户使用）
+
+```bash
+# 1. 安装
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e .
+
+# 2. 启动 Web 服务器
+llm-test serve
+
+# 3. 在浏览器中打开 http://127.0.0.1:8000
+#    输入你的 API 中转站 Base URL 和 Key，点击"开始验证"
+```
+
+### 命令行
+
 ```bash
 # 1. 安装
 python3 -m venv .venv && source .venv/bin/activate
@@ -398,12 +414,46 @@ class MyProbe(BaseProbe):
 
 然后在 `src/llm_test/probes/__init__.py` 的 `_load_probes()` 中添加 import，并可选地在 `config/default.yaml` 中添加配置项。
 
+## Web 应用
+
+llm-test 内置了一个 Web 界面，方便不想使用命令行的用户直接在浏览器中测试。
+
+```bash
+llm-test serve                    # 启动于 http://127.0.0.1:8000
+llm-test serve --port 3000        # 自定义端口
+llm-test serve --reload           # 开发模式，代码修改自动重启
+```
+
+### 功能
+
+- **首页** — 输入中转站的 Base URL、API Key 和协议类型，点击即可开始测试。通过 SSE 实时显示每项探测的进度和结果。
+- **报告页** — 可分享的测试报告，包含评级结果、各探测得分明细和完整诊断解释。每个报告有独立 URL（`/report/{id}`）。
+- **方法论页** — 详细介绍 10 项探测的原理、评分公式、设计原则和已知局限性。
+- **用户系统** — 可选的用户名密码注册登录。登录后测试报告自动保存到账户下。
+
+### 技术架构
+
+Web 应用是一个 FastAPI 服务，直接导入并在服务端运行现有的探测代码。这样做可以保护探测 prompt、评分逻辑和基线数据不暴露给客户端。
+
+- **后端**：FastAPI + Jinja2 模板 + SQLAlchemy async
+- **前端**：Tailwind CSS（暗色主题）+ Alpine.js 处理交互
+- **数据库**：默认 SQLite（`data/llm_test.db`），生产环境使用 PostgreSQL（设置 `DATABASE_URL`）
+- **认证**：bcrypt 密码哈希 + JWT Cookie
+- **实时进度**：SSE（Server-Sent Events）
+
+### 环境变量
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `DATABASE_URL` | `sqlite+aiosqlite:///data/llm_test.db` | 数据库连接字符串。生产环境使用 `postgresql+asyncpg://...` |
+| `SECRET_KEY` | `dev-secret-change-in-production` | JWT 签名密钥。**生产环境必须修改。** |
+
 ## 项目结构
 
 ```
 src/llm_test/
   __init__.py
-  cli.py          Click CLI 入口
+  cli.py          Click CLI 入口（run、report、baseline、serve）
   config.py       YAML + Pydantic 配置加载
   client.py       统一 API 客户端（anthropic SDK + httpx）
   cache.py        基线响应缓存（数据模型 + I/O）
@@ -422,13 +472,28 @@ src/llm_test/
     baseline.py   A/B 基线对比
     sysprompt.py  系统提示提取（可选）
     logprobs.py   Logprob 分析（可选）
+  web/
+    app.py            FastAPI 应用工厂
+    database.py       SQLAlchemy async 引擎 + 会话
+    models.py         User + TestReport 数据库模型
+    auth.py           bcrypt + JWT 认证
+    schemas.py        请求校验
+    templates_conf.py Jinja2 模板配置
+    routes/
+      pages.py        页面路由（/、/methodology、/report、/login、/register）
+      auth.py         注册/登录 API
+      api.py          测试提交 + SSE 进度推送
+    templates/        Jinja2 HTML 模板（暗色主题）
+    static/           CSS + JS 静态文件
 
 config/
   default.yaml            探测权重、参数、输出设置
   endpoints.yaml.example  端点配置模板
 
+data/                     SQLite 数据库（已 git-ignore）
 cache/                    基线响应缓存（已 git-ignore）
-results/                  运行时输出（已 git-ignore）
+results/                  CLI 运行时输出（已 git-ignore）
+alembic/                  数据库迁移（生产环境 PostgreSQL 使用）
 ```
 
 ## 相关工具
