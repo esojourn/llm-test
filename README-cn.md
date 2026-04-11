@@ -134,7 +134,7 @@ llm-test baseline --output path/to/cache.json
 
 | 探测 | 权重 | 测试内容 |
 |---|---|---|
-| **latency** | 3.0 | 测量 tokens/秒和延迟。Opus 本质上比小模型更慢——一个以 Haiku 速度（>120 tok/s）响应却声称是 Opus 的代理非常可疑。**不对称评分**：比基线更慢没问题（网络开销）；更快才是危险信号。 |
+| **latency** | 3.0 | 测量 tokens/秒和延迟。Opus 本质上比小模型更慢——一个以 Haiku 速度（>120 tok/s）响应却声称是 Opus 的代理非常可疑。**不对称评分**：比基线更慢 = 1.0 分（网络开销正常）；更快则线性插值，从 ratio=1.0 的 1.0 分降至 ratio=2.0+ 的 0.1 分。 |
 | **knowledge** | 3.0 | 询问训练数据截止日期边界附近的事件。不同模型版本有不同的知识截止日期，因此模型对应该知道的事件回答错误（或对不应该知道的事件回答正确）会暴露其真实版本。 |
 | **style** | 3.0 | 提取风格特征（响应长度、词汇丰富度、句式复杂度、对冲用语频率、格式化习惯）并比较目标与基线之间的分布差异。 |
 
@@ -142,7 +142,7 @@ llm-test baseline --output path/to/cache.json
 
 | 探测 | 权重 | 测试内容 |
 |---|---|---|
-| **identity** | 2.0 | 8 个创意提示来让模型暴露身份——直接询问、角色扮演场景、反向拼写、补全陷阱。可被系统提示覆盖，因此信号强度中等。 |
+| **identity** | 2.0 | 8 个创意提示来让模型暴露身份——直接询问、角色扮演场景、反向拼写、补全陷阱。区分特定的"Opus"自我识别（强信号）、泛化的"Claude"回答（弱正面）和非 Claude 身份（强负面）。可被系统提示覆盖，因此信号强度中等。 |
 | **sysprompt** | 2.0 | 尝试提取注入的系统提示。很多代理会添加隐藏的系统提示如"You are Claude Opus"——如果泄露了，就是操纵的证据。默认禁用。 |
 | **logprobs** | 2.0 | 比较 token 概率分布（需要 API 支持 logprob）。可用时非常可靠，但大多数 Anthropic 兼容 API 不暴露 logprob。默认禁用。 |
 
@@ -152,11 +152,63 @@ llm-test baseline --output path/to/cache.json
 |---|---|---|
 | **metadata** | 1.0 | 检查 API 响应中的 `model` 字段，并检查 HTTP 头部中的代理指纹。很容易伪造，但不匹配是一个强烈的负面信号。 |
 
+## 测试指南
+
+### 推荐测试流程
+
+```bash
+# 第 1 步：一次性收集基线（节省后续测试的 API 成本）
+llm-test baseline
+
+# 第 2 步：快速检查（验证连通性和基本信号）
+llm-test run --quick --baseline-cache cache/baseline.json --output terminal --output json
+
+# 第 3 步：完整测试（所有 8 个启用的探测，更慢但更全面）
+llm-test run --baseline-cache cache/baseline.json --output terminal --output json
+
+# 第 4 步：查看详细结果
+llm-test report results/latest.json        # 终端展示
+cat results/latest.json | jq '.detailed_results'  # 原始 JSON
+```
+
+### 针对特定疑点的测试
+
+```bash
+# 怀疑速度太快？聚焦延迟探测
+llm-test run --probe latency --baseline-cache cache/baseline.json
+
+# 怀疑不是同一个模型？聚焦推理 + 身份 + 基线对比
+llm-test run --probe reasoning --probe identity --probe baseline
+
+# 只测试多个目标中的某一个
+llm-test run --target my-proxy --baseline-cache cache/baseline.json
+
+# 仅输出 JSON（无终端输出，适用于 CI/脚本）
+llm-test run --output json --baseline-cache cache/baseline.json
+```
+
+### 解读结果
+
+- **所有探测 confidence < 0.75**：这些探测被排除在评分之外（可通过 `config/default.yaml` 中的 `scoring.confidence_threshold` 配置）。通常意味着发生了错误——检查 JSON 报告中的 `details.error` 字段。
+- **高分但低置信度**：结果看起来不错但测量不可靠。增加采样次数或检查间歇性错误。
+- **Latency score = 1.0 且低置信度**：基线对比不可用，探测回退到绝对吞吐量启发式模式。
+- **Identity score = 0.6**：模型泛化地自称"Claude"但未明确说是"Opus"。模棱两可——可能是 Opus 但被系统提示覆盖了。
+
 ## 报告输出
 
-使用 `--output json` 时，llm-test 会在 `results/` 目录下写入一个带时间戳的报告文件（同时更新 `latest.json`）。报告采用 **v2 格式**，包含两个部分：
+### 终端输出
 
-**`targets`** — 向后兼容的摘要（与旧格式相同）：
+终端报告展示：
+- 每个目标的 Provider 信息（类型、模型名、URL）
+- 探测评分表格，包含 **Score** 和 **Confidence** 两列
+- 判定分类和解释说明
+- 因低置信度被排除的探测列表
+
+### JSON 报告
+
+使用 `--output json` 时，llm-test 在 `results/` 目录下写入带时间戳的报告文件（同时更新 `latest.json`）。报告采用 **v2 格式**，包含两个部分：
+
+**`targets`** — 向后兼容的摘要：
 
 ```json
 {
@@ -190,7 +242,7 @@ llm-test baseline --output path/to/cache.json
           "probe_name": "reasoning",
           "score": 0.85,
           "confidence": 0.9,
-          "details": {"tasks_passed": 4, "tasks_total": 5, "failed": ["edge_case_3"]},
+          "details": {"correct": 4, "total": 5, "accuracy": 0.8, "tasks": [...]},
           "api_calls": [
             {
               "model_reported": "claude-opus-4-6-20260301",
@@ -210,16 +262,91 @@ llm-test baseline --output path/to/cache.json
 }
 ```
 
-`detailed_results` 中记录的数据：
+### 报告字段参考
 
-| 数据 | 位置 |
+**顶层字段：**
+
+| 字段 | 说明 |
 |---|---|
-| Provider 类型、URL、模型名 | `endpoint` |
-| 每个探测的分数 + 置信度 | `probes[].score`、`probes[].confidence` |
-| 探测专属诊断数据（投票结果、相似度分数、延迟统计等） | `probes[].details` |
-| 每次 API 调用：模型输出、token 数、延迟、TTFB、吞吐量 | `probes[].api_calls[]` |
+| `version` | 报告格式版本（当前为 `2`） |
+| `timestamp` | 测试运行的 UTC 时间（`YYYYMMDD_HHMMSS`） |
+| `targets` | 每个目标的汇总评分（向后兼容 v1） |
+| `detailed_results` | 每个目标的完整诊断数据 |
 
-终端报告同样增强了：显示 provider 信息，评分表格新增置信度列。`llm-test report` 命令同时兼容旧版（v1）和新版（v2）格式的报告文件。
+**`targets.{name}` 字段：**
+
+| 字段 | 说明 |
+|---|---|
+| `overall_score` | 加权聚合分数（0.0 - 1.0） |
+| `classification` | 分类：`GENUINE_OPUS`、`LIKELY_OPUS`、`SUSPICIOUS`、`LIKELY_DOWNGRADE`、`DEFINITE_DOWNGRADE` |
+| `probe_scores` | 探测名到分数的映射（包含所有探测，含被排除的） |
+| `explanation` | 判定结果的人类可读解释 |
+
+**`detailed_results.{name}.endpoint` 字段：**
+
+| 字段 | 说明 |
+|---|---|
+| `name` | `endpoints.yaml` 中定义的目标名称 |
+| `provider` | `anthropic`、`anthropic_compatible` 或 `openai_compatible` |
+| `base_url` | API 端点 URL |
+| `model` | 请求的模型名称 |
+
+**`detailed_results.{name}.probes[]` 字段：**
+
+| 字段 | 说明 |
+|---|---|
+| `probe_name` | 探测标识符 |
+| `score` | 0.0（非 Opus）到 1.0（与 Opus 一致），自动钳位到此范围 |
+| `confidence` | 此次测量的可靠性（0.0 - 1.0）。低于 `confidence_threshold`（默认 0.75）的探测不参与评分 |
+| `details` | 探测专属的诊断数据（见下表） |
+| `api_calls` | 此探测发起的所有 API 调用的数组 |
+
+**各探测的 `details` 主要字段：**
+
+| 探测 | `details` 中的关键字段 |
+|---|---|
+| metadata | `model_reported`、`model_expected`、`model_field_match`、`interesting_headers` |
+| identity | `identity_votes`（每个模型家族的投票数）、`dominant_identity`、`prompts`（逐条提示结果） |
+| latency | `per_length`（每个提示长度的统计）、`target_median_tps`、`speed_ratio` |
+| reasoning | `correct`、`total`、`accuracy`、`tasks`（逐题的通过/失败及响应预览） |
+| needle | `results`（按上下文长度和深度的结果）、`accuracy` |
+| baseline | `avg_similarity`、`comparisons`（逐条提示的相似度和长度比） |
+| knowledge | `results`（逐条知识点的匹配结果及提取的日期） |
+| style | 语言风格特征分数和对比 |
+
+**`api_calls[]` 字段：**
+
+| 字段 | 说明 |
+|---|---|
+| `model_reported` | API 返回的模型名称 |
+| `content` | 模型的完整响应文本 |
+| `input_tokens` | 提示的 token 数 |
+| `output_tokens` | 响应的 token 数 |
+| `stop_reason` | 模型停止的原因（`end_turn`、`max_tokens` 等） |
+| `latency_ms` | 请求总延迟（毫秒） |
+| `ttfb_ms` | 首字节时间（毫秒） |
+| `tokens_per_sec` | 输出吞吐量（output_tokens / 延迟秒数） |
+
+`llm-test report` 命令同时兼容旧版（v1，无详细数据）和新版（v2）格式的报告文件。
+
+## 数据存储
+
+所有持久化数据保存在两个目录中：
+
+```
+cache/                              基线响应缓存（已 git-ignore）
+  baseline.json                     所有探测的缓存基线响应
+
+results/                            测试报告（已 git-ignore）
+  report_YYYYMMDD_HHMMSS.json       每次运行的带时间戳报告（v2 格式）
+  latest.json                       最近一次报告的副本
+```
+
+**`cache/baseline.json`** 保存缓存的基线 API 响应，避免每次运行都调用 Anthropic 官方 API。每条记录包含完整的 API 响应（模型输出、token 数、时延），以请求参数的 SHA-256 哈希为键。由 `llm-test baseline` 生成，由 `llm-test run --baseline-cache` 消费。
+
+**`results/report_*.json`** 保存每次运行的完整测试记录。使用 `--output json` 的每次运行都会创建新的带时间戳文件，并覆盖 `latest.json`。报告是自包含的——包括端点配置、所有探测的评分与置信度、诊断详情和原始 API 调用数据。旧报告不会被自动删除，在 `results/` 中累积，方便历史对比。
+
+**不保存的数据**（避免泄露敏感信息）：API 密钥、`api_key_env` 变量名，以及 API 响应中的完整 `raw_json`/`raw_headers`（它们回显请求内容且体积较大）。
 
 ## 评分公式
 
@@ -228,6 +355,10 @@ llm-test baseline --output path/to/cache.json
 ```
 
 每个探测的贡献同时受其权重（该维度的重要性）和置信度（此次测量的可靠性）缩放。出错的探测获得 confidence=0.1 和 score=0.5，实际上将其从最终计算中移除。
+
+**置信度阈值**：置信度低于 `scoring.confidence_threshold`（默认 0.75，可在 `config/default.yaml` 中配置）的探测会被完全排除在聚合之外。它们的分数仍然记录在报告中，但不影响最终判定。这可以防止不可靠的测量（如错误或缓存未命中）扭曲最终分数。被排除的探测会在解释文本中标注。
+
+**分数钳位**：所有探测的 score 和 confidence 值自动钳位到 [0.0, 1.0] 范围，防止边界情况产生无效的聚合结果。
 
 ## 自定义探测扩展
 

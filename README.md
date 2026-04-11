@@ -134,7 +134,7 @@ Each probe produces a score from 0.0 (definitely not Opus) to 1.0 (consistent wi
 
 | Probe | Weight | What it tests |
 |---|---|---|
-| **latency** | 3.0 | Measures tokens/second and latency. Opus is fundamentally slower than smaller models — a proxy that responds at Haiku speed (>120 tok/s) while claiming Opus is suspicious. **Asymmetric scoring**: slower than baseline is fine (network overhead); faster is the red flag. |
+| **latency** | 3.0 | Measures tokens/second and latency. Opus is fundamentally slower than smaller models — a proxy that responds at Haiku speed (>120 tok/s) while claiming Opus is suspicious. **Asymmetric scoring**: slower than baseline = score 1.0 (network overhead is normal); faster uses linear interpolation from 1.0 at ratio=1.0 down to 0.1 at ratio=2.0+. |
 | **knowledge** | 3.0 | Asks about events near training data cutoff boundaries. Different model versions have different knowledge cutoffs, so a model answering wrong about events it should know (or right about events it shouldn't) reveals its true version. |
 | **style** | 3.0 | Extracts stylistic features (response length, vocabulary richness, sentence complexity, hedging language frequency, formatting habits) and compares distributions between target and baseline. |
 
@@ -142,7 +142,7 @@ Each probe produces a score from 0.0 (definitely not Opus) to 1.0 (consistent wi
 
 | Probe | Weight | What it tests |
 |---|---|---|
-| **identity** | 2.0 | 8 creative prompts to make the model reveal its identity — direct asks, role-play scenarios, reverse spelling, completion traps. Can be overridden by system prompts, hence medium signal. |
+| **identity** | 2.0 | 8 creative prompts to make the model reveal its identity — direct asks, role-play scenarios, reverse spelling, completion traps. Distinguishes between specific "Opus" self-identification (strong signal), generic "Claude" response (weak positive), and non-Claude identity (strong negative). Can be overridden by system prompts, hence medium signal. |
 | **sysprompt** | 2.0 | Attempts to extract injected system prompts. Many proxies add a hidden system prompt like "You are Claude Opus" — if this leaks, it's evidence of manipulation. Disabled by default. |
 | **logprobs** | 2.0 | Compares token probability distributions (requires API logprob support). Highly reliable when available, but most Anthropic-compatible APIs don't expose logprobs. Disabled by default. |
 
@@ -152,11 +152,63 @@ Each probe produces a score from 0.0 (definitely not Opus) to 1.0 (consistent wi
 |---|---|---|
 | **metadata** | 1.0 | Checks the `model` field in the API response and inspects HTTP headers for proxy fingerprints. Trivially spoofable, but a mismatch is a strong negative signal. |
 
+## Testing guide
+
+### Recommended testing workflow
+
+```bash
+# Step 1: Collect baseline once (saves API costs for subsequent runs)
+llm-test baseline
+
+# Step 2: Quick sanity check (fast, cheap — verifies connectivity and basic signals)
+llm-test run --quick --baseline-cache cache/baseline.json --output terminal --output json
+
+# Step 3: Full test (all 8 enabled probes, thorough but slower)
+llm-test run --baseline-cache cache/baseline.json --output terminal --output json
+
+# Step 4: Review detailed results
+llm-test report results/latest.json        # terminal display
+cat results/latest.json | jq '.detailed_results'  # raw JSON
+```
+
+### Testing specific concerns
+
+```bash
+# Suspect speed is too fast? Focus on latency
+llm-test run --probe latency --baseline-cache cache/baseline.json
+
+# Suspect a different model? Focus on reasoning + identity
+llm-test run --probe reasoning --probe identity --probe baseline
+
+# Test a single target out of many
+llm-test run --target my-proxy --baseline-cache cache/baseline.json
+
+# Full test with JSON output only (no terminal clutter, for CI/scripts)
+llm-test run --output json --baseline-cache cache/baseline.json
+```
+
+### Interpreting results
+
+- **All probes confidence < 0.75**: These probes are excluded from scoring (configurable via `scoring.confidence_threshold` in `config/default.yaml`). Usually means errors occurred — check `details.error` in the JSON report.
+- **High score but low confidence**: The result looks good but the measurement was unreliable. Run more samples or check for intermittent errors.
+- **Latency score = 1.0 with low confidence**: Baseline comparison unavailable. The probe fell back to absolute heuristics.
+- **Identity score = 0.6**: The model identifies as "Claude" generically but not specifically as "Opus". Ambiguous — could be Opus with a system prompt override.
+
 ## Report output
 
-When you add `--output json`, llm-test writes a timestamped report to `results/` (plus a `latest.json` symlink). The report uses a **v2 format** with two sections:
+### Terminal output
 
-**`targets`** — backwards-compatible summary (same as before):
+The terminal report shows:
+- Provider info (type, model, URL) for each target
+- A probe scores table with **Score** and **Confidence** columns
+- Verdict classification and explanation
+- Notes about which probes were excluded due to low confidence
+
+### JSON report
+
+When you add `--output json`, llm-test writes a timestamped report to `results/` (plus a `latest.json` copy). The report uses a **v2 format** with two sections:
+
+**`targets`** — backwards-compatible summary:
 
 ```json
 {
@@ -190,7 +242,7 @@ When you add `--output json`, llm-test writes a timestamped report to `results/`
           "probe_name": "reasoning",
           "score": 0.85,
           "confidence": 0.9,
-          "details": {"tasks_passed": 4, "tasks_total": 5, "failed": ["edge_case_3"]},
+          "details": {"correct": 4, "total": 5, "accuracy": 0.8, "tasks": [...]},
           "api_calls": [
             {
               "model_reported": "claude-opus-4-6-20260301",
@@ -210,16 +262,91 @@ When you add `--output json`, llm-test writes a timestamped report to `results/`
 }
 ```
 
-What's captured in `detailed_results`:
+### Report field reference
 
-| Data | Location |
+**Top level:**
+
+| Field | Description |
 |---|---|
-| Provider type, base URL, model | `endpoint` |
-| Per-probe score + confidence | `probes[].score`, `probes[].confidence` |
-| Probe-specific diagnostics (votes, similarity scores, latency stats, etc.) | `probes[].details` |
-| Every API call: model output, token counts, latency, TTFB, throughput | `probes[].api_calls[]` |
+| `version` | Report format version (currently `2`) |
+| `timestamp` | UTC time of the test run (`YYYYMMDD_HHMMSS`) |
+| `targets` | Summary scores per target (backwards compatible with v1) |
+| `detailed_results` | Full diagnostic data per target |
 
-The terminal report also shows provider info and a confidence column alongside scores. The `llm-test report` command can display both old (v1) and new (v2) format files.
+**`targets.{name}`:**
+
+| Field | Description |
+|---|---|
+| `overall_score` | Weighted aggregate score (0.0 - 1.0) |
+| `classification` | One of: `GENUINE_OPUS`, `LIKELY_OPUS`, `SUSPICIOUS`, `LIKELY_DOWNGRADE`, `DEFINITE_DOWNGRADE` |
+| `probe_scores` | Map of probe name to score (all probes, including excluded ones) |
+| `explanation` | Human-readable interpretation of the verdict |
+
+**`detailed_results.{name}.endpoint`:**
+
+| Field | Description |
+|---|---|
+| `name` | Target name from `endpoints.yaml` |
+| `provider` | `anthropic`, `anthropic_compatible`, or `openai_compatible` |
+| `base_url` | API endpoint URL |
+| `model` | Requested model name |
+
+**`detailed_results.{name}.probes[]`:**
+
+| Field | Description |
+|---|---|
+| `probe_name` | Probe identifier |
+| `score` | 0.0 (not Opus) to 1.0 (consistent with Opus), clamped to this range |
+| `confidence` | How reliable this measurement is (0.0 - 1.0). Probes below `confidence_threshold` (default 0.75) are excluded from the verdict |
+| `details` | Probe-specific diagnostic data (see below) |
+| `api_calls` | Array of every API call made by this probe |
+
+**`details` per probe:**
+
+| Probe | Key fields in `details` |
+|---|---|
+| metadata | `model_reported`, `model_expected`, `model_field_match`, `interesting_headers` |
+| identity | `identity_votes` (vote counts per model family), `dominant_identity`, `prompts` (per-prompt results) |
+| latency | `per_length` (stats per prompt length), `target_median_tps`, `speed_ratio` |
+| reasoning | `correct`, `total`, `accuracy`, `tasks` (per-task pass/fail with response previews) |
+| needle | `results` (per context length and depth), `accuracy` |
+| baseline | `avg_similarity`, `comparisons` (per-prompt similarity and length ratios) |
+| knowledge | `results` (per-fact match results with extracted dates) |
+| style | Linguistic feature scores and comparisons |
+
+**`api_calls[]`:**
+
+| Field | Description |
+|---|---|
+| `model_reported` | Model name returned by the API |
+| `content` | Full model response text |
+| `input_tokens` | Prompt token count |
+| `output_tokens` | Response token count |
+| `stop_reason` | Why the model stopped (`end_turn`, `max_tokens`, etc.) |
+| `latency_ms` | Total request latency in milliseconds |
+| `ttfb_ms` | Time to first byte in milliseconds |
+| `tokens_per_sec` | Output throughput (output_tokens / latency_seconds) |
+
+The `llm-test report` command can display both old (v1, no detailed data) and new (v2) format files.
+
+## Data storage
+
+All persistent data is stored in two directories:
+
+```
+cache/                              Baseline response cache (git-ignored)
+  baseline.json                     Cached baseline responses for all probes
+
+results/                            Test reports (git-ignored)
+  report_YYYYMMDD_HHMMSS.json       Timestamped report per run (v2 format)
+  latest.json                       Copy of the most recent report
+```
+
+**`cache/baseline.json`** stores cached baseline API responses so you don't need to call the official Anthropic API on every run. Each entry contains the full API response (model output, tokens, timing), keyed by a SHA-256 hash of the request parameters. Generated by `llm-test baseline`, consumed by `llm-test run --baseline-cache`.
+
+**`results/report_*.json`** stores the complete test record for each run. Every run with `--output json` creates a new timestamped file and overwrites `latest.json`. Reports are self-contained — they include the endpoint configuration, all probe scores with confidence, diagnostic details, and raw API call data. Reports are never deleted automatically; old reports accumulate in `results/` for historical comparison.
+
+**Not stored** (excluded to avoid leaking secrets): API keys, the `api_key_env` variable name, and the full `raw_json`/`raw_headers` from API responses (these echo the request and bloat the file).
 
 ## Scoring formula
 
@@ -228,6 +355,10 @@ final_score = sum(score_i * weight_i * confidence_i) / sum(weight_i * confidence
 ```
 
 Each probe's contribution is scaled by both its weight (how important the dimension is) and its confidence (how reliable this particular measurement was). A probe that errors out gets confidence=0.1 and score=0.5, effectively removing it from the final calculation.
+
+**Confidence threshold**: Probes with confidence below `scoring.confidence_threshold` (default: 0.75, configurable in `config/default.yaml`) are excluded from the aggregation entirely. Their scores are still recorded in the report but do not affect the verdict. This prevents unreliable measurements (e.g., from errors or cache misses) from skewing the final score. Excluded probes are noted in the explanation text.
+
+**Score clamping**: All probe scores and confidence values are automatically clamped to [0.0, 1.0] to prevent edge cases from producing invalid aggregations.
 
 ## Extending with custom probes
 
