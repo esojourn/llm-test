@@ -11,7 +11,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import EndpointConfig, ProbeConfig
-from ...client import EndpointClient
+from ...client import EndpointClient, EndpointUnreachableError
 from ...probes import BaseProbe, ProbeResult, get_all_probes
 from ...scoring import compute_verdict
 from ..auth import decode_token
@@ -71,6 +71,14 @@ async def _run_test(
 ):
     try:
         target = EndpointClient(target_config)
+
+        # Pre-flight connectivity check — fail fast with a clear message
+        await queue.put({"type": "preflight", "message": "正在检查端点连通性..."})
+        try:
+            await target.preflight_check()
+        except EndpointUnreachableError as e:
+            await queue.put({"type": "error", "message": f"端点不可用: {e}"})
+            return
 
         # Load baseline cache if available
         from pathlib import Path

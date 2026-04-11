@@ -10,7 +10,7 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from .cache import CacheMissError
-from .client import CachedEndpointClient, EndpointClient, NullEndpointClient, RecordingEndpointClient
+from .client import CachedEndpointClient, EndpointClient, EndpointUnreachableError, NullEndpointClient, RecordingEndpointClient
 from .config import AppConfig, ProbeConfig
 from .probes import BaseProbe, ProbeResult, get_all_probes, get_probe
 from .scoring import RunResult, Verdict, compute_verdict
@@ -76,6 +76,29 @@ async def run_probes(
         for target_config in targets:
             target = EndpointClient(target_config)
             task = progress.add_task(f"Testing {target_config.name}...", total=len(probes))
+
+            # Pre-flight connectivity check — fail fast instead of running all probes
+            progress.update(task, description=f"[{target_config.name}] Connectivity check...")
+            try:
+                await target.preflight_check()
+            except EndpointUnreachableError as e:
+                console.print(f"[red]  ✗ {target_config.name}: {e}[/red]")
+                verdicts[target_config.name] = RunResult(
+                    endpoint_info={
+                        "name": target_config.name,
+                        "provider": target_config.provider,
+                        "base_url": target_config.base_url,
+                        "model": target_config.model,
+                    },
+                    verdict=Verdict(
+                        overall_score=0.0,
+                        classification="ERROR",
+                        explanation=str(e),
+                        probe_scores={},
+                    ),
+                    probe_results=[],
+                )
+                continue
 
             results: list[ProbeResult] = []
             for probe_name, probe in probes.items():

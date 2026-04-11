@@ -28,12 +28,47 @@ class APIResponse:
     tokens_per_sec: float = 0.0
 
 
+class EndpointUnreachableError(Exception):
+    """Raised when the endpoint fails a connectivity pre-check."""
+
+
 class EndpointClient:
     """Wraps anthropic SDK and raw httpx for different provider types."""
 
     def __init__(self, config: EndpointConfig):
         self.config = config
         self.name = config.name
+
+    async def preflight_check(self) -> None:
+        """Send a minimal request to verify the endpoint is reachable.
+
+        Raises ``EndpointUnreachableError`` with a user-friendly message on
+        failure, so callers can bail out before running the full probe suite.
+        """
+        try:
+            await self.send_message(
+                messages=[{"role": "user", "content": "hi"}],
+                max_tokens=1,
+                temperature=0.0,
+            )
+        except httpx.HTTPStatusError as e:
+            raise EndpointUnreachableError(
+                f"Endpoint returned {e.response.status_code} ({e.response.reason_phrase}). "
+                f"URL: {self.config.base_url}"
+            ) from e
+        except anthropic.APIStatusError as e:
+            raise EndpointUnreachableError(
+                f"Endpoint returned {e.status_code}. "
+                f"URL: {self.config.base_url}"
+            ) from e
+        except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+            raise EndpointUnreachableError(
+                f"Cannot connect to endpoint: {self.config.base_url} — {e}"
+            ) from e
+        except httpx.TimeoutException as e:
+            raise EndpointUnreachableError(
+                f"Endpoint timed out: {self.config.base_url} — {e}"
+            ) from e
 
     async def send_message(
         self,

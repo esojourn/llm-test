@@ -20,6 +20,7 @@ CLASSIFICATION_COLORS = {
     "SUSPICIOUS": "yellow",
     "LIKELY_DOWNGRADE": "red",
     "DEFINITE_DOWNGRADE": "bold red",
+    "ERROR": "bold magenta",
 }
 
 

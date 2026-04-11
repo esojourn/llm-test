@@ -12,6 +12,7 @@
       {% elif report.classification == 'LIKELY_OPUS' %}bg-green-400/20 text-green-400
       {% elif report.classification == 'SUSPICIOUS' %}bg-score-yellow/20 text-score-yellow
       {% elif report.classification == 'LIKELY_DOWNGRADE' %}bg-orange-400/20 text-orange-400
+      {% elif report.classification == 'ERROR' %}bg-purple-400/20 text-purple-400
       {% else %}bg-score-red/20 text-score-red{% endif %}">
       {{ report.classification }}
     </div>
