@@ -91,14 +91,21 @@ class BaselineProbe(BaseProbe):
 
 
 def _text_similarity(a: str, b: str) -> float:
-    """Simple n-gram based similarity (Jaccard on word bigrams)."""
+    """N-gram based similarity (Jaccard on word bigrams, unigram fallback)."""
     a_grams = _get_ngrams(a.lower(), 2)
     b_grams = _get_ngrams(b.lower(), 2)
 
-    if not a_grams and not b_grams:
-        return 1.0
+    # If either text is too short for bigrams, fall back to unigrams
     if not a_grams or not b_grams:
-        return 0.0
+        a_unigrams = _get_ngrams(a.lower(), 1)
+        b_unigrams = _get_ngrams(b.lower(), 1)
+        if not a_unigrams and not b_unigrams:
+            return 1.0 if a.strip() == b.strip() else 0.0
+        if not a_unigrams or not b_unigrams:
+            return 0.0
+        intersection = a_unigrams & b_unigrams
+        union = a_unigrams | b_unigrams
+        return len(intersection) / len(union) if union else 0.0
 
     intersection = a_grams & b_grams
     union = a_grams | b_grams

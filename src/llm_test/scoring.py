@@ -26,25 +26,31 @@ class RunResult:
 def compute_verdict(
     results: list[ProbeResult],
     weights: dict[str, float],
+    confidence_threshold: float = 0.0,
 ) -> Verdict:
     """
     Weighted average of probe scores, adjusted by per-probe confidence.
 
     Final score = sum(score_i * weight_i * confidence_i) / sum(weight_i * confidence_i)
+
+    Probes with confidence below confidence_threshold are excluded from the
+    aggregation (their scores are still recorded but do not affect the verdict).
     """
     numerator = 0.0
     denominator = 0.0
     probe_scores: dict[str, float] = {}
 
     for result in results:
+        probe_scores[result.probe_name] = result.score
+        if result.confidence < confidence_threshold:
+            continue
         w = weights.get(result.probe_name, 1.0)
         numerator += result.score * w * result.confidence
         denominator += w * result.confidence
-        probe_scores[result.probe_name] = result.score
 
-    overall = numerator / denominator if denominator > 0 else 0.0
+    overall = numerator / denominator if denominator > 0 else 0.5  # 0.5 = inconclusive
     classification = _classify(overall)
-    explanation = _explain(overall, classification, results, weights)
+    explanation = _explain(overall, classification, results, weights, confidence_threshold)
 
     return Verdict(
         overall_score=overall,
@@ -72,6 +78,7 @@ def _explain(
     classification: str,
     results: list[ProbeResult],
     weights: dict[str, float],
+    confidence_threshold: float = 0.0,
 ) -> str:
     lines: list[str] = []
 
@@ -88,11 +95,19 @@ def _explain(
 
     # Highlight the most impactful negative probes
     for result in sorted(results, key=lambda r: r.score):
+        if result.confidence < confidence_threshold:
+            continue
         if result.score < 0.5:
             w = weights.get(result.probe_name, 1.0)
             lines.append(
                 f"  - {result.probe_name}: score={result.score:.2f} "
                 f"(weight={w}, confidence={result.confidence:.2f})"
             )
+
+    # Note probes excluded due to low confidence
+    excluded = [r for r in results if r.confidence < confidence_threshold]
+    if excluded:
+        names = ", ".join(r.probe_name for r in excluded)
+        lines.append(f"  (excluded due to low confidence: {names})")
 
     return "\n".join(lines)

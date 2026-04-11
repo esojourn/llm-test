@@ -125,21 +125,20 @@ class LatencyProbe(BaseProbe):
 
 
 def _score_latency(target_tps: float, baseline_tps: float) -> float:
-    """Score based on throughput comparison. Faster than baseline is suspicious."""
+    """Score based on throughput comparison. Faster than baseline is suspicious.
+
+    Uses linear interpolation: ratio 1.0 → 1.0, ratio 2.0 → 0.1, >2.0 clamped at 0.1.
+    Smooth curve avoids noise-sensitive threshold jumps.
+    """
     if baseline_tps <= 0:
         return 0.5
 
     ratio = target_tps / baseline_tps
 
-    if ratio > 2.0:
-        # >2x faster — almost certainly a different (smaller) model
-        return 0.1
-    elif ratio > 1.5:
-        # 50-100% faster — very suspicious
-        return 0.3
-    elif ratio > 1.2:
-        # 20-50% faster — somewhat suspicious
-        return 0.6
+    if ratio <= 1.0:
+        return 1.0  # Same speed or slower — consistent with Opus
+    elif ratio >= 2.0:
+        return 0.1  # >2x faster — almost certainly a smaller model
     else:
-        # Similar speed or slower — consistent with Opus
-        return 1.0
+        # Linear interpolation: (1.0, 1.0) → (2.0, 0.1)
+        return 1.0 - (ratio - 1.0) * 0.9

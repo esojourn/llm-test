@@ -17,6 +17,10 @@ class ProbeResult:
     details: dict[str, Any] = field(default_factory=dict)
     raw_responses: list[APIResponse] = field(default_factory=list)
 
+    def __post_init__(self) -> None:
+        self.score = max(0.0, min(1.0, self.score))
+        self.confidence = max(0.0, min(1.0, self.confidence))
+
 
 class BaseProbe(ABC):
     name: str = ""

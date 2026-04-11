@@ -6,8 +6,10 @@ on difficult reasoning tasks. A downgraded model will fail these.
 
 from __future__ import annotations
 
+import ast
 import json
 import re
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -62,8 +64,8 @@ REASONING_TASKS = [
         "id": "word_puzzle",
         "prompt": (
             "I'm thinking of a 5-letter English word where:\n"
-            "1. Removing the first letter gives a 4-letter word meaning 'to employ'\n"
-            "2. Removing the last letter gives a 4-letter word meaning 'to misplace'\n"
+            "1. Removing the first letter gives a 4-letter word meaning 'to peel or trim'\n"
+            "2. Removing the last letter gives a 4-letter word meaning 'to box or argue'\n"
             "3. The word contains exactly two vowels\n"
             "What is the word? Reply with just the word."
         ),
@@ -201,8 +203,55 @@ def _check_logic_deduction(response: str) -> bool:
     return found == valid
 
 
+_UNSAFE_AST_NODES = (
+    ast.Import, ast.ImportFrom, ast.Global, ast.Nonlocal,
+    ast.Delete, ast.AsyncFunctionDef, ast.ClassDef,
+    ast.Yield, ast.YieldFrom, ast.Await,
+)
+_UNSAFE_CALL_NAMES = frozenset({
+    "exec", "eval", "compile", "open", "input", "__import__",
+    "getattr", "setattr", "delattr", "globals", "locals", "vars",
+    "breakpoint", "exit", "quit",
+})
+
+
+def _is_safe_ast(tree: ast.Module) -> bool:
+    """Reject code that imports modules, calls dangerous builtins, or uses attributes like __."""
+    for node in ast.walk(tree):
+        if isinstance(node, _UNSAFE_AST_NODES):
+            return False
+        if isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Name) and func.id in _UNSAFE_CALL_NAMES:
+                return False
+        if isinstance(node, ast.Attribute) and node.attr.startswith("__"):
+            return False
+    return True
+
+
+def _run_interleave_in_subprocess(code: str) -> bool:
+    """Execute interleave function tests in an isolated subprocess."""
+    test_script = code + "\n" + "\n".join([
+        "assert interleave([1, 2, 3], ['a', 'b', 'c']) == [1, 'a', 2, 'b', 3, 'c']",
+        "assert interleave([1, 2], ['a', 'b', 'c', 'd']) == [1, 'a', 2, 'b', 'c', 'd']",
+        "assert interleave([], [1, 2]) == [1, 2]",
+        "assert interleave([1], []) == [1]",
+    ])
+    try:
+        result = subprocess.run(
+            ["python3", "-c", test_script],
+            capture_output=True,
+            timeout=5,
+            # Drop all env vars to prevent leaking secrets to model-generated code
+            env={},
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, Exception):
+        return False
+
+
 def _check_code_interleave(response: str) -> bool:
-    """Validate the interleave function by extracting and testing it."""
+    """Validate the interleave function by extracting and testing it in a subprocess."""
     # Extract function code
     code_match = re.search(r'(def interleave\(.+?)(?:\n(?=\S)|\Z)', response, re.DOTALL)
     if not code_match:
@@ -212,43 +261,27 @@ def _check_code_interleave(response: str) -> bool:
         return False
 
     code = code_match.group(1)
-    namespace: dict[str, Any] = {}
     try:
-        exec(code, namespace)  # noqa: S102
-        fn = namespace["interleave"]
-        # Test cases
-        assert fn([1, 2, 3], ['a', 'b', 'c']) == [1, 'a', 2, 'b', 3, 'c']
-        assert fn([1, 2], ['a', 'b', 'c', 'd']) == [1, 'a', 2, 'b', 'c', 'd']
-        assert fn([], [1, 2]) == [1, 2]
-        assert fn([1], []) == [1]
-        return True
-    except Exception:
+        tree = ast.parse(code)
+        if not _is_safe_ast(tree):
+            return False
+    except SyntaxError:
         return False
+
+    return _run_interleave_in_subprocess(code)
 
 
 def _check_word_puzzle(response: str) -> bool:
-    """The answer should be a word matching all constraints."""
-    # Expected answer: "loser" — remove first: "oser"? No...
-    # Actually: "abuse" — remove first "buse"=use? No...
-    # Let's accept any word that satisfies the constraints
+    """The answer is 'spare': s+pare (to peel), spar+e (to box), two vowels (a, e)."""
     words = re.findall(r'\b([a-zA-Z]{5})\b', response)
     for word in words:
         w = word.lower()
-        # Constraint 1: remove first letter → 4-letter word meaning "to employ" (use, hire)
         without_first = w[1:]
-        # Constraint 2: remove last letter → 4-letter word meaning "to misplace" (lose)
         without_last = w[:-1]
-        # Constraint 3: exactly two vowels
         vowels = sum(1 for c in w if c in 'aeiou')
-
-        employ_words = {"use", "used", "uses", "hire"}
-        lose_words = {"lose", "lost", "miss"}
-
-        if without_first in employ_words and without_last in lose_words and vowels == 2:
+        if without_first == "pare" and without_last == "spar" and vowels == 2:
             return True
-
-    # Fallback: accept "loser" as a reasonable answer
-    return "loser" in response.lower()
+    return False
 
 
 def _check_strawberry(response: str) -> bool:

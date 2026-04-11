@@ -10,7 +10,7 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from .cache import CacheMissError
-from .client import CachedEndpointClient, EndpointClient, RecordingEndpointClient
+from .client import CachedEndpointClient, EndpointClient, NullEndpointClient, RecordingEndpointClient
 from .config import AppConfig, ProbeConfig
 from .probes import BaseProbe, ProbeResult, get_all_probes, get_probe
 from .scoring import RunResult, Verdict, compute_verdict
@@ -109,7 +109,7 @@ async def run_probes(
 
                 progress.advance(task)
 
-            verdict = compute_verdict(results, weights)
+            verdict = compute_verdict(results, weights, config.scoring.confidence_threshold)
             verdicts[target_config.name] = RunResult(
                 endpoint_info={
                     "name": target_config.name,
@@ -131,6 +131,7 @@ async def collect_baseline(
     """Run baseline-using probes to collect and record baseline responses."""
     real_baseline = EndpointClient(config.baseline)
     recorder = RecordingEndpointClient(real_baseline)
+    dummy_target = NullEndpointClient()
 
     # Probes that use baseline for content comparison
     cacheable = ["baseline", "style", "knowledge"]
@@ -150,8 +151,8 @@ async def collect_baseline(
             progress.update(task, description=f"Collecting baseline for {probe_name}...")
             probe_cfg = config.probes.get(probe_name, ProbeConfig())
             extra = probe_cfg.model_dump(exclude={"enabled", "weight"})
-            # Use real baseline as target too; we only care about recorded baseline responses
-            await probe.run(real_baseline, recorder, extra)
+            # Dummy target avoids wasted API calls; only baseline (recorder) hits the API
+            await probe.run(dummy_target, recorder, extra)
             progress.advance(task)
 
     return recorder

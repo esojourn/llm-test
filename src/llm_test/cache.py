@@ -49,7 +49,7 @@ def compute_prompt_hash(
     """Deterministic SHA-256 hash of call parameters."""
     canonical = json.dumps(
         {"messages": messages, "system": system,
-         "max_tokens": max_tokens, "temperature": temperature},
+         "max_tokens": max_tokens, "temperature": round(temperature, 6)},
         sort_keys=True,
         ensure_ascii=True,
     )

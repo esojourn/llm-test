@@ -74,11 +74,14 @@ MODEL_KEYWORDS = {
     "opus": ["opus", "claude-opus", "claude opus", "claude 3 opus", "claude 3.5 opus"],
     "sonnet": ["sonnet", "claude-sonnet", "claude sonnet", "claude 3 sonnet", "claude 3.5 sonnet"],
     "haiku": ["haiku", "claude-haiku", "claude haiku", "claude 3 haiku"],
+    "claude_generic": ["claude"],  # Weak positive — at least identifies as Claude
     "gpt": ["gpt-4", "gpt-3.5", "openai", "chatgpt"],
     "gemini": ["gemini", "bard", "google"],
     "llama": ["llama", "meta", "meta ai"],
     "mistral": ["mistral", "mixtral"],
 }
+
+_CLAUDE_FAMILIES = frozenset({"opus", "sonnet", "haiku", "claude_generic"})
 
 
 @register_probe
@@ -118,21 +121,24 @@ class IdentityProbe(BaseProbe):
         # Score based on identity consistency
         total_votes = sum(identity_votes.values())
         opus_votes = identity_votes.get("opus", 0)
+        claude_generic_votes = identity_votes.get("claude_generic", 0)
         non_claude_votes = sum(
             v for k, v in identity_votes.items()
-            if k not in ("opus", "sonnet", "haiku")
+            if k not in _CLAUDE_FAMILIES
         )
 
         if total_votes == 0:
             score = 0.5  # Inconclusive
         elif non_claude_votes > 0:
             score = 0.0  # Detected non-Claude model
-        elif opus_votes == total_votes:
-            score = 1.0  # All consistent Opus
+        elif opus_votes == total_votes or (opus_votes + claude_generic_votes == total_votes and opus_votes > 0):
+            score = 1.0  # Consistent Opus (generic claude alongside opus is fine)
         elif opus_votes > 0:
             score = opus_votes / total_votes  # Mixed Claude signals
+        elif claude_generic_votes > 0:
+            score = 0.6  # Identifies as Claude but not a specific variant
         else:
-            # Claims Claude but not Opus
+            # Claims specific non-Opus Claude variant
             score = 0.3
 
         return ProbeResult(

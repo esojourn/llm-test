@@ -87,17 +87,19 @@ def _detect_system_prompt_leak(response: str) -> str | None:
     """Detect if the response contains a leaked system prompt."""
     lower = response.lower()
 
-    # Look for common system prompt patterns
+    # Look for common system prompt patterns — specific enough to avoid
+    # false positives from the model discussing itself in natural language
     indicators = [
-        "you are a helpful",
-        "you are claude",
-        "your role is",
+        "you are a helpful assistant",
+        "you are claude opus",
+        "your role is to",
         "system instructions:",
         "system prompt:",
         "<system>",
         "you must always",
-        "you should pretend",
-        "act as if you are",
+        "you should pretend to be",
+        "act as if you are claude",
+        "respond as though you are",
     ]
 
     for indicator in indicators:

@@ -199,12 +199,40 @@ class EndpointClient:
         )
 
 
+class NullEndpointClient:
+    """Returns placeholder responses without making API calls.
+
+    Used as a dummy target during baseline collection so only the
+    baseline (recording) side actually hits the API.
+    """
+
+    name = "null"
+
+    async def send_message(
+        self,
+        messages: list[dict[str, str]],
+        system: str | None = None,
+        max_tokens: int = 1024,
+        temperature: float = 0.0,
+    ) -> APIResponse:
+        return APIResponse(
+            model_reported="null",
+            content="",
+            input_tokens=0,
+            output_tokens=0,
+            stop_reason="null",
+            raw_json={},
+            raw_headers={},
+        )
+
+
 class CachedEndpointClient:
     """Drop-in replacement for EndpointClient that serves from a baseline cache."""
 
     def __init__(self, cache: Any, name: str = "baseline (cached)"):
         # cache is a BaselineCacheFile instance (imported lazily to avoid circular import)
         self.name = name
+        self.config: EndpointConfig | None = None
         self._cache = cache
 
     async def send_message(
