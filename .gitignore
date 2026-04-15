@@ -2,6 +2,7 @@ results/
 cache/
 data/
 config/endpoints.yaml
+config/presets.yaml
 __pycache__/
 *.egg-info/
 .venv/

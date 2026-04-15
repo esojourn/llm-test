@@ -172,9 +172,13 @@ def report(report_path: str) -> None:
 @click.option("--host", default="127.0.0.1", help="Bind host")
 @click.option("--port", default=8000, help="Bind port")
 @click.option("--reload", "do_reload", is_flag=True, help="Auto-reload on code changes")
-def serve(host: str, port: int, do_reload: bool) -> None:
+@click.option("--test-mode", is_flag=True, help="Enable test mode with preset endpoints")
+def serve(host: str, port: int, do_reload: bool, test_mode: bool) -> None:
     """Start the web server."""
+    import os
     import uvicorn
+    if test_mode:
+        os.environ["LLM_TEST_MODE"] = "1"
     uvicorn.run(
         "llm_test.web.app:app",
         host=host,

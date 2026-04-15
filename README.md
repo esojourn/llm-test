@@ -421,7 +421,9 @@ llm-test includes a built-in web interface for users who want to test their API 
 ```bash
 llm-test serve                    # Start on http://127.0.0.1:8000
 llm-test serve --port 3000        # Custom port
+llm-test serve --host 0.0.0.0     # Listen on all interfaces (e.g. Tailscale)
 llm-test serve --reload           # Dev mode with auto-reload
+llm-test serve --test-mode        # Enable preset endpoints for quick testing
 ```
 
 ### Features
@@ -430,6 +432,7 @@ llm-test serve --reload           # Dev mode with auto-reload
 - **Report page** — Shareable report with verdict, probe score breakdown, and full diagnostic explanation. Each report gets a unique URL (`/report/{id}`).
 - **Methodology page** — Detailed explanation of all 10 probes, scoring formula, design principles, and known limitations.
 - **User accounts** — Optional registration with username/password. Logged-in users' reports are saved to their account.
+- **Test mode** — When started with `--test-mode`, the homepage shows a preset selector dropdown that auto-fills the base URL, API key, and protocol type from `config/presets.yaml`. Useful for repeatedly testing the same set of proxies without re-entering credentials each time.
 
 ### Architecture
 
@@ -440,6 +443,39 @@ The web app is a FastAPI application that directly imports and runs the existing
 - **Database**: SQLite by default (`data/llm_test.db`), PostgreSQL for production (set `DATABASE_URL`)
 - **Auth**: bcrypt + JWT stored in cookies
 - **Real-time progress**: SSE (Server-Sent Events)
+
+### Test mode
+
+Test mode adds a preset endpoint selector to the homepage, so you don't have to re-enter proxy URLs and API keys each time you test.
+
+```bash
+# 1. Create presets config from the example
+cp config/presets.yaml.example config/presets.yaml
+
+# 2. Edit with your proxy details
+```
+
+```yaml
+# config/presets.yaml
+presets:
+  - name: "Proxy A"
+    base_url: "https://proxy-a.example.com"
+    api_key: "sk-your-key"
+    provider: "anthropic_compatible"
+  - name: "Proxy B"
+    base_url: "https://proxy-b.example.com"
+    api_key: "sk-another-key"
+    provider: "openai_compatible"
+```
+
+```bash
+# 3. Start with test mode enabled
+llm-test serve --test-mode
+```
+
+The preset dropdown appears at the top of the test form. Selecting a preset fills in all fields automatically. The API key is masked in the dropdown (only last 4 characters shown) and only transmitted when a preset is selected.
+
+`config/presets.yaml` is git-ignored since it contains API keys. Without `--test-mode`, the preset endpoints are completely disabled (API returns 404, UI hides the selector).
 
 ### Environment variables
 
@@ -489,6 +525,7 @@ src/llm_test/
 config/
   default.yaml            Probe weights, parameters, output settings
   endpoints.yaml.example  Endpoint config template
+  presets.yaml.example    Preset endpoints template (for test mode)
 
 data/                     SQLite database (git-ignored)
 cache/                    Baseline response cache (git-ignored)

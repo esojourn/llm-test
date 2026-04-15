@@ -17,6 +17,21 @@
     <div class="mt-10 max-w-lg mx-auto bg-bg-card rounded-xl border border-border p-6 card-glow fade-in"
          x-show="state === 'idle'" x-transition>
       <div class="space-y-4 text-left">
+        {% if test_mode %}
+        <!-- Preset selector (test mode only) -->
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">
+            预设中转站
+            <span class="ml-2 text-xs px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded">测试模式</span>
+          </label>
+          <select @change="applyPreset($event.target.value)" class="w-full bg-bg border border-border rounded-lg px-4 py-2.5 text-white focus:border-accent focus:outline-none transition">
+            <option value="">-- 手动输入 --</option>
+            <template x-for="(p, i) in presets" :key="i">
+              <option :value="i" x-text="p.name + ' (' + p.api_key_masked + ')'"></option>
+            </template>
+          </select>
+        </div>
+        {% endif %}
         <div>
           <label class="block text-sm text-gray-400 mb-1">API Base URL</label>
           <input type="url" x-model="form.base_url"
@@ -260,6 +275,42 @@ function testApp() {
     totalCount: 0,
     doneCount: 0,
     errorMsg: '',
+    testMode: {{ test_mode | tojson }},
+    presets: [],
+    selectedPreset: '',
+
+    async init() {
+      if (this.testMode) {
+        try {
+          const resp = await fetch('/api/presets');
+          if (resp.ok) {
+            const data = await resp.json();
+            this.presets = data.presets;
+          }
+        } catch(e) {}
+      }
+    },
+
+    async applyPreset(index) {
+      this.selectedPreset = index;
+      if (index === '') {
+        this.form = { base_url: '', api_key: '', provider: 'anthropic_compatible' };
+        return;
+      }
+      try {
+        const resp = await fetch('/api/presets/apply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ index: parseInt(index) }),
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          this.form.base_url = data.base_url;
+          this.form.api_key = data.api_key;
+          this.form.provider = data.provider;
+        }
+      } catch(e) {}
+    },
 
     async startTest() {
       this.state = 'testing';

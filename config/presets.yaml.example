@@ -1,0 +1,14 @@
+# Preset endpoints for test mode.
+# Copy to presets.yaml and fill in your values.
+# This file is git-ignored (contains API keys).
+
+presets:
+  - name: "示例中转站A"
+    base_url: "https://proxy-a.example.com"
+    api_key: "sk-your-key-here"
+    provider: "anthropic_compatible"
+
+  - name: "示例中转站B"
+    base_url: "https://proxy-b.example.com"
+    api_key: "sk-your-key-here"
+    provider: "openai_compatible"

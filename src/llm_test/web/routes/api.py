@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import uuid
+from pathlib import Path
 
+import yaml
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +23,52 @@ from ..models import TestReport
 from ..schemas import TestRequest
 
 router = APIRouter(tags=["test"])
+
+
+def _is_test_mode() -> bool:
+    return os.environ.get("LLM_TEST_MODE") == "1"
+
+
+def _load_presets() -> list[dict]:
+    path = Path("config/presets.yaml")
+    if not path.exists():
+        return []
+    data = yaml.safe_load(path.read_text())
+    return data.get("presets", []) if data else []
+
+
+@router.get("/presets")
+async def get_presets():
+    if not _is_test_mode():
+        raise HTTPException(404, "Not available")
+    presets = _load_presets()
+    # Mask API keys — only send last 4 chars
+    safe = []
+    for p in presets:
+        safe.append({
+            "name": p["name"],
+            "base_url": p["base_url"],
+            "api_key_masked": "..." + p.get("api_key", "")[-4:],
+            "provider": p.get("provider", "anthropic_compatible"),
+        })
+    return {"presets": safe}
+
+
+@router.post("/presets/apply")
+async def apply_preset(request: Request):
+    if not _is_test_mode():
+        raise HTTPException(404, "Not available")
+    body = await request.json()
+    index = body.get("index")
+    presets = _load_presets()
+    if index is None or index < 0 or index >= len(presets):
+        raise HTTPException(400, "Invalid preset index")
+    p = presets[index]
+    return {
+        "base_url": p["base_url"],
+        "api_key": p.get("api_key", ""),
+        "provider": p.get("provider", "anthropic_compatible"),
+    }
 
 # In-memory store for active test sessions
 _active_tests: dict[str, asyncio.Queue] = {}

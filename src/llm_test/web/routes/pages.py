@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +17,8 @@ router = APIRouter()
 
 @router.get("/")
 async def index(request: Request):
-    return templates.TemplateResponse(request, "index.html")
+    test_mode = os.environ.get("LLM_TEST_MODE") == "1"
+    return templates.TemplateResponse(request, "index.html", context={"test_mode": test_mode})
 
 
 @router.get("/methodology")
